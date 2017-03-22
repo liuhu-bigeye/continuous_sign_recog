@@ -11,10 +11,10 @@ from utils import Softmax, softmax_np
 floatX = theano.config.floatX
 intX = np.int32
 
-import sys
-sys.path.insert(0, '/home/liuhu/tools/rnn_ctc/nnet')
+# import sys
+# sys.path.insert(0, '/home/liuhu/tools/rnn_ctc/nnet')
 
-def ctc_cost(pred, pred_len, token, blank):
+def ctc_cost(pred, pred_len, token, blank=0):
     '''
     ctc_cost of multi sentences
     :param pred: (T, nb, voca_size+1)                    (4,1,3)
@@ -58,7 +58,7 @@ def ctc_cost(pred, pred_len, token, blank):
     cost = -T.log(labels_prob+eps)
     return cost
 
-def best_right_path_cost(pred, mask, token, blank):
+def best_right_path_cost(pred, mask, token, blank=0):
     '''
     best right path cost of multi sentences
     :param pred: (T, nb, voca_size+1)                    (4,1,3)

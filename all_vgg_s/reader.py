@@ -5,7 +5,7 @@ import h5py
 import random
 import pickle
 import numpy as np
-sys.path.insert(0, '/home/liuhu/workspace/fight_4_cvpr/')
+sys.path.insert(0, '/home/liuhu/workspace/journal/')
 from utils import resampling, upsampling, interp_images, im_augmentation
 
 data_dir = '/home/trunk/disk1/database-rwth-2014/phoenix2014-release'
@@ -52,7 +52,7 @@ class Reader(object):
 			feat = self.get_imgs(indices)
 			yield feat, k, k+batch_size
 
-	def iterate(self, return_det=False, return_folder=False):
+	def iterate(self, return_folder=False):
 		index = range(self.n_samples)
 		if self.do_shuffle:
 			random.shuffle(index)
@@ -62,7 +62,8 @@ class Reader(object):
 			batch_size = len(indices)
 
 			y_len = np.array([len(self.db['token'][i]) for i in indices], dtype=np.int32)
-			label = np.array([np.concatenate([self.tokens[idx], (y_len-len(self.tokens[idx]))*[-1]]) for idx in indices], dtype=np.int32)
+			max_y_len = max(y_len)
+			token = np.array([np.concatenate([self.tokens[idx], (max_y_len-y_len[i])*[-2]])+1 for i,idx in enumerate(indices)], dtype=np.int32)
 
 			ID = [self.db['folder'][i] for i in indices]
 			b_idx = self.db['begin_index']
@@ -95,7 +96,7 @@ class Reader(object):
 			feat = np.reshape(np.float32(feat), (-1, 3, 101, 101))  # (batch_size*X_len, 3, 101, 101)
 			mask = np.array(mask, dtype=np.float32)  # (batch_size, max_h_len)
 
-			yields = [feat, mask, label]
+			yields = [feat, mask, token]
 			if return_folder:
 				yields += [ID]
 
@@ -111,32 +112,10 @@ class Reader(object):
 			img_resized = cv2.resize(img, (101, 101))
 			imgs[i] = img_resized
 		im_augmentation(imgs, self.eig_value, self.eig_vector, trans=0.1, color_dev=0.2, distortion=self.distortion)
-		return np.transpose(imgs, [2, 0, 1])
+		return np.transpose(imgs, [0, 3, 1, 2])
 
 if __name__ == '__main__':
-	bs = 2
-	train_set = Reader(phase='train', batch_size=bs, c3d_depth=4, depth_stride=4, resample=True, distortion=True)
-
-	for index, (feat, mask, label, det_label, ID) in enumerate(train_set.iterate(return_det=True, return_folder=True)):
-		print feat.shape, mask.shape, det_label.shape
-
-		feat = np.reshape(feat, (bs, -1, 3, 101, 101))
-
-		idx = 0
-		img = np.transpose(feat[idx], (0, 2, 3, 1)) + np.array([123, 117, 102], dtype=np.float32)[None, None, None, :]
-
-		import skimage.io as sio
-		from skimage.transform import resize
-
-		out = np.zeros((30, 30*img.shape[0], 3), dtype=np.float32)
-
-		img[img > 255.] = 255.
-		img[img < 0.] = 0.
-
-		for i in range(img.shape[0]):
-			im = resize(img[i] / 255., (30, 30))
-			out[:, i*30: (i+1)*30, :] = im
-
-		sio.imsave('./reader.jpg', out)
-
+	train_set = Reader(phase='train', batch_size=10, do_shuffle=True, resample=True, distortion=True)
+	for inputs in train_set.iterate():
+		print [i.shape for i in inputs]
 		break

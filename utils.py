@@ -71,7 +71,6 @@ def upsampling(lengths, depth, stride):
 
 	return indices
 
-
 def upsampling_at_end(lengths, depth, stride):
 	indices = []
 	for length in lengths:

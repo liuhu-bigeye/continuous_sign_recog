@@ -8,7 +8,7 @@ import lasagne
 
 from lasagne.layers import *
 from lasagne.nonlinearities import *
-import caffe
+# import caffe
 
 from try_ctc.m_ctc_cost import ctc_cost
 from utils import Softmax
@@ -16,7 +16,7 @@ from utils import Softmax
 class Model(object):
 	def __init__(self, phase, config, vocabulary_size=1295, hidden_ndim=512):
 		# need to be same voca_size and hidde_ndim so as to load same shape params
-		self.log_self()
+		# self.log_self()
 		size = 101
 		# model paras
 		self.config = config
@@ -31,7 +31,7 @@ class Model(object):
 		data = T.tensor4('data')  # (3*nb, 3, 96, 96) or (nb*len, 3, 96, 96)
 		mask = T.matrix('mask')  # (nb, max_hlen)
 		token = T.imatrix('token')  # (nb, max_vlen)
-		label = T.imatrix('label')  # (nb, voca_size)
+		# label = T.imatrix('label')  # (nb, voca_size)
 
 		net = {}
 		# feature extraction
@@ -61,11 +61,9 @@ class Model(object):
 		net['pre_conv1d'] = DimshuffleLayer(ReshapeLayer(incoming=NonlinearityLayer(net['fc6'], nonlinearity=rectify), shape=(self.nb, -1, 1024)), (0, 2, 1))
 		net['conv1d_1'] = Conv1DLayer(net['pre_conv1d'], num_filters=1024, filter_size=3, pad='same')
 		net['pool1d_1'] = MaxPool1DLayer(net['conv1d_1'], pool_size=2)	#(nb, 1024, max_hlen)
-		net['drop1d_1'] = DropoutLayer(net['pool1d_1'], p=0.5)
 
-		net['conv1d_2'] = Conv1DLayer(net['drop1d_1'], num_filters=1024, filter_size=3, pad='same')
+		net['conv1d_2'] = Conv1DLayer(net['conv1d_1'], num_filters=1024, filter_size=3, pad='same')
 		net['pool1d_2'] = MaxPool1DLayer(net['conv1d_2'], pool_size=2)	#(nb, 1024, max_hlen)
-		net['drop1d_2'] = DropoutLayer(net['pool1d_2'], p=0.5)
 
 		# LSTM
 		net['lstm_input'] = InputLayer(shape=(None, None, 1024), name='lstm_input')
@@ -118,20 +116,20 @@ class Model(object):
 			self.valid_outputs = [loss_valid_feat, triplet_loss_valid]
 		elif phase == 'ctc':
 			# for ctc loss
-			self.params_full = lasagne.layers.get_all_params([self.net['drop1d_2'], self.net['out_lin'], self.net['det_lin']], trainable=True)
-			self.regular_params = lasagne.layers.get_all_params([self.net['drop1d_2'], self.net['out_lin'], self.net['det_lin']], regularizable=True)
+			self.params_full = lasagne.layers.get_all_params([self.net['conv1d_2'], self.net['out_lin']], trainable=True)
+			self.regular_params = lasagne.layers.get_all_params([self.net['conv1d_2'], self.net['out_lin']], regularizable=True)
 			regular_full = lasagne.regularization.apply_penalty(self.regular_params, lasagne.regularization.l2) * np.array(5e-4/2, dtype=np.float32)
 
 			# full train loss
-			ctc_loss_train, pred_train = self.get_ctc_loss(data, mask, token, label, deteministic=False)
+			ctc_loss_train, pred_train = self.get_ctc_loss(data, mask, token, deteministic=False)
 			loss_train_full = ctc_loss_train + regular_full
 
 			# full valid loss
-			ctc_loss_valid, pred_valid = self.get_ctc_loss(data, mask, token, label, deteministic=True)
+			ctc_loss_valid, pred_valid = self.get_ctc_loss(data, mask, token, deteministic=True)
 			loss_valid_full = ctc_loss_valid + regular_full
 
 			self.updates = lasagne.updates.adam(loss_train_full, self.params_full, learning_rate=self.learning_rate)
-			self.inputs = [data, mask, token, label]
+			self.inputs = [data, mask, token]
 			self.train_outputs = [loss_train_full, ctc_loss_train, pred_train]
 			self.valid_outputs = [loss_valid_full, ctc_loss_valid, pred_valid]
 		elif phase == 'extract_feature':
@@ -139,7 +137,7 @@ class Model(object):
 			fc6 = get_output(self.net['fc6'], data, deterministic = True)
 			self.feature_func = theano.function(inputs=[data], outputs=fc6)
 		elif phase == 'get_prediction':
-			embeding = get_output(self.net['drop1d_2'], data, deterministic=True)  # (nb, 1024, len_m)
+			embeding = get_output(self.net['conv1d_2'], data, deterministic=True)  # (nb, 1024, len_m)
 			output_lin = get_output(self.net['out_lin'], {self.net['lstm_input']: T.transpose(embeding, (0, 2, 1)), self.net['mask']: mask}, deterministic=True)
 			# (nb, max_hlen, voca_size+1)
 			self.predict_func = theano.function(inputs=[data, mask], outputs=[output_lin])
@@ -170,8 +168,8 @@ class Model(object):
 		loss = T.mean(d_pos ** 2)
 		return loss#, T.mean(norm_pos), T.mean(norm_neg1), T.mean(norm_neg2), T.mean(norm_neg), T.mean(max_norm)
 
-	def get_ctc_loss(self, data, mask, token, label, deteministic=False):
-		embeding = get_output(self.net['drop1d_2'], data, deterministic=deteministic)
+	def get_ctc_loss(self, data, mask, token, deteministic=False):
+		embeding = get_output(self.net['conv1d_2'], data, deterministic=deteministic)
 
 		# loss calculation
 		## ctc loss
@@ -179,8 +177,8 @@ class Model(object):
 		output_softmax = Softmax(output_lin)  # (nb, max_hlen, nClasses)
 		pred = T.argmax(output_softmax, axis=2)
 
-		output_lin_trans = T.transpose(output_lin, (1, 0, 2))  # (max_hlen, nb, nClasses)
-		ctc_loss = ctc_cost(output_lin_trans, token, T.sum(mask, axis=1, dtype='int32')).mean()
+		output_trans = T.transpose(output_softmax, (1, 0, 2))  # (max_hlen, nb, nClasses)
+		ctc_loss = ctc_cost(output_trans, T.sum(mask, axis=1, dtype='int32'), token).mean()
 
 		return ctc_loss, pred
 
@@ -237,9 +235,9 @@ class Model(object):
 					self.learning_rate.set_value(lr)
 					glog.info('Change learning rate to %.2e' % lr)
 
-	def log_self(self):
-		filename = os.path.abspath(__file__)
-		if filename.endswith('c'):
-			filename=filename[:-1]
-		with open(filename) as f:
-			glog.info(f.read())
+	# def log_self(self):
+	# 	filename = os.path.abspath(__file__)
+	# 	if filename.endswith('c'):
+	# 		filename=filename[:-1]
+	# 	with open(filename) as f:
+	# 		glog.info(f.read())

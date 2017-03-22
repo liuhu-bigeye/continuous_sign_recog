@@ -43,8 +43,8 @@ def valid(model, valid_set, config, epoch):
 	hypos, IDs, losses = [], [], np.array([])
 	# inputs: feat, mask, label, estimate, indices, ID
 	# returns: pred_argmax
-	for valid_inputs in valid_set.iterate(epoch=epoch):
-		valid_return = model.valid_func(*valid_inputs)
+	for valid_inputs in valid_set.iterate(return_folder=True):
+		valid_return = model.valid_func(*valid_inputs[:-1])
 		losses = np.vstack((losses, valid_return[:-1])) if losses.shape != (0,) else np.array(valid_return[:-1])
 
 		h_len = np.sum(valid_inputs[1], axis=1)
@@ -83,9 +83,9 @@ def train_valid(model, train_set, valid_set, test_set, config):
 
 		losses = np.array([])
 
-		for iter, train_inputs in enumerate(train_set.iterate(epoch=epoch/config.items['em_rate'])):
+		for iter, train_inputs in enumerate(train_set.iterate()):
 			train_return = model.train_func(*train_inputs)
-			losses = np.vstack((losses, train_return)) if losses.shape!=(0,) else np.array(train_return)
+			losses = np.vstack((losses, train_return[:-1])) if losses.shape!=(0,) else np.array(train_return[:-1])
 			if iter % config.items['disp_iter']==0:
 				glog.info('Phase = %s, Epoch %d, Iteration %d, lr = %.2e, Training loss = %s' %
 						  (phase, epoch, iter, model.learning_rate.get_value().astype(np.float32), np.mean(losses, axis=0)))
@@ -107,7 +107,7 @@ def main():
 
 	phase = config.items['phase']
 	from utils import mkdir_safe, log_self
-	log_self(__file__)
+	# log_self(__file__)
 
 	glog.info('generating model...')
 	from model import Model
@@ -123,8 +123,8 @@ def main():
 
 	from reader import Reader
 	train_set = Reader(phase='train', batch_size=config.items['batch_size'], do_shuffle=True, resample=True, distortion=True)
-	valid_set = Reader(phase='dev', batch_size=config.items['batch_size'], do_shuffle=False, resample=False, distortion=False)
-	test_set = Reader(phase='test', batch_size=config.items['batch_size'], do_shuffle=False, resample=False, distortion=False)
+	valid_set = Reader(phase='dev', batch_size=1, do_shuffle=False, resample=False, distortion=False)
+	test_set = Reader(phase='test', batch_size=1, do_shuffle=False, resample=False, distortion=False)
 
 	try:
 		config.items['starting'] = int(config.items['model'].split('_')[-1])

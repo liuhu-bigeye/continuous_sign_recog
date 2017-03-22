@@ -4,6 +4,7 @@
 # log will be saved if only with more than 5 Iterations
 
 phase=ctc
+model_feat=/home/liuhu/workspace/fight_4_cvpr/all_vgg_s/snapshot_feat/best_epochs/132
 
 gpu=0
 lr=5e-4
