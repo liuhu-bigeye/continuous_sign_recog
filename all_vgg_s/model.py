@@ -61,9 +61,11 @@ class Model(object):
 		net['pre_conv1d'] = DimshuffleLayer(ReshapeLayer(incoming=NonlinearityLayer(net['fc6'], nonlinearity=rectify), shape=(self.nb, -1, 1024)), (0, 2, 1))
 		net['conv1d_1'] = Conv1DLayer(net['pre_conv1d'], num_filters=1024, filter_size=3, pad='same')
 		net['pool1d_1'] = MaxPool1DLayer(net['conv1d_1'], pool_size=2)	#(nb, 1024, max_hlen)
+		net['drop1d_1'] = DropoutLayer(net['pool1d_1'], p=0.1, shared_axes=(2,))
 
-		net['conv1d_2'] = Conv1DLayer(net['conv1d_1'], num_filters=1024, filter_size=3, pad='same')
+		net['conv1d_2'] = Conv1DLayer(net['drop1d_1'], num_filters=1024, filter_size=3, pad='same')
 		net['pool1d_2'] = MaxPool1DLayer(net['conv1d_2'], pool_size=2)	#(nb, 1024, max_hlen)
+		net['drop1d_2'] = DropoutLayer(net['pool1d_2'], p=0.1, shared_axes=(2,))
 
 		# LSTM
 		net['lstm_input'] = InputLayer(shape=(None, None, 1024), name='lstm_input')
@@ -98,26 +100,27 @@ class Model(object):
 		glog.info('dummy save load success, remove it and start calculate outputs...')
 
 		if phase == 'feat':
-			# for triplet pretrain use
-			self.params_feat = get_all_params(net['fc7'])
-			regular_feat = lasagne.regularization.apply_penalty(self.params_feat, lasagne.regularization.l2) * np.array(5e-4 / 2, dtype=np.float32)
-
-			## triplet train loss
-			triplet_loss_train = self.get_triplet_loss(data, deterministic=False)
-			loss_train_feat = triplet_loss_train + regular_feat
-
-			## triplet valid loss
-			triplet_loss_valid = self.get_triplet_loss(data, deterministic=True)
-			loss_valid_feat = triplet_loss_valid + regular_feat
-
-			self.updates = lasagne.updates.momentum(loss_train_feat, self.params_feat, learning_rate=learning_rate, momentum=0.9)
-			self.inputs = [data]
-			self.train_outputs = [loss_train_feat, triplet_loss_train]
-			self.valid_outputs = [loss_valid_feat, triplet_loss_valid]
+			pass
+			# # for triplet pretrain use
+			# self.params_feat = get_all_params(net['fc7'])
+			# regular_feat = lasagne.regularization.apply_penalty(self.params_feat, lasagne.regularization.l2) * np.array(5e-4 / 2, dtype=np.float32)
+			#
+			# ## triplet train loss
+			# triplet_loss_train = self.get_triplet_loss(data, deterministic=False)
+			# loss_train_feat = triplet_loss_train + regular_feat
+			#
+			# ## triplet valid loss
+			# triplet_loss_valid = self.get_triplet_loss(data, deterministic=True)
+			# loss_valid_feat = triplet_loss_valid + regular_feat
+			#
+			# self.updates = lasagne.updates.momentum(loss_train_feat, self.params_feat, learning_rate=learning_rate, momentum=0.9)
+			# self.inputs = [data]
+			# self.train_outputs = [loss_train_feat, triplet_loss_train]
+			# self.valid_outputs = [loss_valid_feat, triplet_loss_valid]
 		elif phase == 'ctc':
 			# for ctc loss
-			self.params_full = lasagne.layers.get_all_params([self.net['conv1d_2'], self.net['out_lin']], trainable=True)
-			self.regular_params = lasagne.layers.get_all_params([self.net['conv1d_2'], self.net['out_lin']], regularizable=True)
+			self.params_full = lasagne.layers.get_all_params([self.net['drop1d_2'], self.net['out_lin']], trainable=True)
+			self.regular_params = lasagne.layers.get_all_params([self.net['drop1d_2'], self.net['out_lin']], regularizable=True)
 			regular_full = lasagne.regularization.apply_penalty(self.regular_params, lasagne.regularization.l2) * np.array(5e-4/2, dtype=np.float32)
 
 			# full train loss
@@ -137,7 +140,7 @@ class Model(object):
 			fc6 = get_output(self.net['fc6'], data, deterministic = True)
 			self.feature_func = theano.function(inputs=[data], outputs=fc6)
 		elif phase == 'get_prediction':
-			embeding = get_output(self.net['conv1d_2'], data, deterministic=True)  # (nb, 1024, len_m)
+			embeding = get_output(self.net['drop1d_2'], data, deterministic=True)  # (nb, 1024, len_m)
 			output_lin = get_output(self.net['out_lin'], {self.net['lstm_input']: T.transpose(embeding, (0, 2, 1)), self.net['mask']: mask}, deterministic=True)
 			# (nb, max_hlen, voca_size+1)
 			self.predict_func = theano.function(inputs=[data, mask], outputs=[output_lin])
@@ -169,7 +172,7 @@ class Model(object):
 		return loss#, T.mean(norm_pos), T.mean(norm_neg1), T.mean(norm_neg2), T.mean(norm_neg), T.mean(max_norm)
 
 	def get_ctc_loss(self, data, mask, token, deteministic=False):
-		embeding = get_output(self.net['conv1d_2'], data, deterministic=deteministic)
+		embeding = get_output(self.net['drop1d_2'], data, deterministic=deteministic)
 
 		# loss calculation
 		## ctc loss
@@ -189,7 +192,7 @@ class Model(object):
 			params_1 = pickle.load(f)
 			# params_2 = pickle.load(f)
 
-		lasagne.layers.set_all_param_values(self.net['pool1d_2'], params_0)
+		lasagne.layers.set_all_param_values(self.net['drop1d_2'], params_0)
 		lasagne.layers.set_all_param_values(self.net['out_lin'], params_1)
 		# lasagne.layers.set_all_param_values(self.net['det_lin'], params_2)
 		glog.info('load model from %s' % os.path.basename(model_file))
@@ -201,20 +204,20 @@ class Model(object):
 		set_all_param_values(self.net['fc6'], params_0)
 		glog.info('load feat model from %s' % os.path.basename(model_file))
 
-	def load_caffemodel(self, proto, caffemodel):
-		caffe.set_mode_cpu()
-		net = caffe.Net(proto, caffemodel, caffe.TEST)
-		for k, v in net.params.items():
-			if not k.startswith('fc'):
-				if k == 'conv1':
-					self.net[k].W.set_value(v[0].data[:, ::-1, :, :])
-				else:
-					self.net[k].W.set_value(v[0].data)
-				self.net[k].b.set_value(np.squeeze(v[1].data))
-				glog.info('layer [%s] loaded from caffemodel' % k)
+	# def load_caffemodel(self, proto, caffemodel):
+	# 	caffe.set_mode_cpu()
+	# 	net = caffe.Net(proto, caffemodel, caffe.TEST)
+	# 	for k, v in net.params.items():
+	# 		if not k.startswith('fc'):
+	# 			if k == 'conv1':
+	# 				self.net[k].W.set_value(v[0].data[:, ::-1, :, :])
+	# 			else:
+	# 				self.net[k].W.set_value(v[0].data)
+	# 			self.net[k].b.set_value(np.squeeze(v[1].data))
+	# 			glog.info('layer [%s] loaded from caffemodel' % k)
 
 	def save_model(self, model_file):
-		params_0 = lasagne.layers.get_all_param_values(self.net['pool1d_2'])
+		params_0 = lasagne.layers.get_all_param_values(self.net['drop1d_2'])
 		params_1 = lasagne.layers.get_all_param_values(self.net['out_lin'])
 		# params_2 = lasagne.layers.get_all_param_values(self.net['det_lin'])
 

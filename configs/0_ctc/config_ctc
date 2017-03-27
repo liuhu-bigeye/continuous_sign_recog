@@ -7,9 +7,9 @@ phase=ctc
 model_feat=/home/liuhu/workspace/fight_4_cvpr/all_vgg_s/snapshot_feat/best_epochs/132
 
 gpu=0
-lr=5e-4
+lr=5e-5
 batch_size=2
-disp_iter=40
+disp_iter=200
 patience=10
 max_epoch=100
 

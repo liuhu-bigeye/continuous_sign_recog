@@ -1,6 +1,7 @@
 import os
 import cv2
 import sys
+import glog
 import h5py
 import random
 import pickle
@@ -115,7 +116,25 @@ class Reader(object):
 		return np.transpose(imgs, [0, 3, 1, 2])
 
 if __name__ == '__main__':
-	train_set = Reader(phase='train', batch_size=10, do_shuffle=True, resample=True, distortion=True)
-	for inputs in train_set.iterate():
-		print [i.shape for i in inputs]
-		break
+	train_set = Reader(phase='train', batch_size=2, do_shuffle=True, resample=True, distortion=True)
+	for index, (feat, mask, token) in enumerate(train_set.iterate()):
+		glog.info((index*2./5600, feat.shape, mask.shape, token.shape))
+		# feat = np.reshape(feat, (10, -1, 3, 101, 101))
+		#
+		# idx = 0
+		# img = np.transpose(feat[idx], (0, 2, 3, 1)) + np.array([123, 117, 102], dtype=np.float32)[None, None, None, :]
+		#
+		# import skimage.io as sio
+		# from skimage.transform import resize
+		#
+		# out = np.zeros((30, 30 * img.shape[0], 3), dtype=np.float32)
+		# img[img > 255.] = 255.
+		# img[img < 0.] = 0.
+		#
+		# for i in range(img.shape[0]):
+		# 	im = resize(img[i] / 255., (30, 30))
+		# 	out[:, i * 30: (i + 1) * 30, :] = im
+		#
+		# sio.imsave('./reader.jpg', out)
+		#
+		# break

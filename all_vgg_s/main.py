@@ -82,7 +82,6 @@ def train_valid(model, train_set, valid_set, test_set, config):
 		glog.info('No WER down for %d epoch, patienced for %d epoch, min_wer: %s' % (epoch - min_wer_epoch, patienced_epoch, min_wer))
 
 		losses = np.array([])
-
 		for iter, train_inputs in enumerate(train_set.iterate()):
 			train_return = model.train_func(*train_inputs)
 			losses = np.vstack((losses, train_return[:-1])) if losses.shape!=(0,) else np.array(train_return[:-1])

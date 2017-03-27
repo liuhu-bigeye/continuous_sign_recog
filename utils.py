@@ -5,19 +5,19 @@ import numpy as np
 import cv2
 from skimage.transform import resize
 
-def process_image(images, image_mean, shape):
-	images = images[:, :, :, [2, 1, 0]]  # BGR to RGB, (X_Len, 128, 128, 3)
-
-	if (not shape == images.shape[1]) or (not shape == images.shape[2]):
-		images_reshape = np.zeros((images.shape[0], shape, shape, 3), dtype=np.float32)
-		for n in range(images.shape[0]):
-			im = resize(images[n] / 255.0, (shape, shape)) * 255.0
-			images_reshape[n] = im
-
-		images = images_reshape
-	images = images - image_mean  # (X_Len, shape, shape, 3)
-
-	return images
+# def process_image(images, image_mean, shape):
+# 	images = images[:, :, :, [2, 1, 0]]  # BGR to RGB, (X_Len, 128, 128, 3)
+#
+# 	if (not shape == images.shape[1]) or (not shape == images.shape[2]):
+# 		images_reshape = np.zeros((images.shape[0], shape, shape, 3), dtype=np.float32)
+# 		for n in range(images.shape[0]):
+# 			im = resize(images[n] / 255.0, (shape, shape)) * 255.0
+# 			images_reshape[n] = im
+#
+# 		images = images_reshape
+# 	images = images - image_mean  # (X_Len, shape, shape, 3)
+#
+# 	return images
 
 
 def resampling(lengths, depth, stride, temp_scaling=0.2, max_len = 250):
@@ -87,18 +87,18 @@ def upsampling_at_end(lengths, depth, stride):
 	return indices
 
 
-def interp_locations(arr, index):
-	# arr: (len, 6)
-	ndim = arr.shape[1]
-	arr_interp = np.zeros((len(index), ndim), dtype=np.float32)
-
-	for i, ind in enumerate(index):
-		if ind == int(ind):
-			arr_interp[i] = arr[ind]
-		else:
-			arr_interp[i] = arr[int(ind)] * (np.ceil(ind) - float(ind)) + arr[int(ind)+1] * (float(ind) - np.floor(ind))
-
-	return arr_interp
+# def interp_locations(arr, index):
+# 	# arr: (len, 6)
+# 	ndim = arr.shape[1]
+# 	arr_interp = np.zeros((len(index), ndim), dtype=np.float32)
+#
+# 	for i, ind in enumerate(index):
+# 		if ind == int(ind):
+# 			arr_interp[i] = arr[ind]
+# 		else:
+# 			arr_interp[i] = arr[int(ind)] * (np.ceil(ind) - float(ind)) + arr[int(ind)+1] * (float(ind) - np.floor(ind))
+#
+# 	return arr_interp
 
 
 def interp_images(arr, index):
@@ -130,39 +130,39 @@ def im_augmentation(ims_src, weight, vec, trans=0.1, color_dev=0.1, distortion=T
 	ims_src += deviation[None, None, None, :]
 
 
-def diff_locations(arr):
-	# arr: (len, d)
-	arr_diff = np.diff(arr, axis=0)
-	output = np.zeros_like(arr)
-	len, dim = arr.shape
-	for i in range(dim):
-		output[:, i] = np.interp(range(len), range(1, len), arr_diff[:, i])
+# def diff_locations(arr):
+# 	# arr: (len, d)
+# 	arr_diff = np.diff(arr, axis=0)
+# 	output = np.zeros_like(arr)
+# 	len, dim = arr.shape
+# 	for i in range(dim):
+# 		output[:, i] = np.interp(range(len), range(1, len), arr_diff[:, i])
+#
+# 	return output
 
-	return output
 
-
-def calc_location_mean_val(db, feat):
-	n_samples = len(db['folder'])
-	data_agg = np.array([])
-	b_idx = db['begin_index']
-	e_idx = db['end_index']
-	for i in range(n_samples):
-		loc_raw = feat['coords'][b_idx[i]: e_idx[i]]  # (len, 6)
-
-		data = np.zeros((loc_raw.shape[0], 20), dtype=np.float32)
-		data[:, 0: 2] = loc_raw[:, 0: 2]
-		data[:, 2: 4] = loc_raw[:, 2: 4]
-		data[:, 4: 6] = loc_raw[:, 0: 2] - loc_raw[:, 4: 6]
-		data[:, 6: 8] = loc_raw[:, 2: 4] - loc_raw[:, 4: 6]
-		data[:, 8:10] = loc_raw[:, 0: 2] - loc_raw[:, 2: 4]
-
-		data[:, 10: ] = diff_locations(data[:, : 10])
-		data_agg = np.vstack((data_agg, data)) if data_agg.size else data
-
-	data_mean = np.mean(data_agg, axis=0)
-	data_std = np.std(data_agg, axis=0)
-
-	return data_mean, data_std
+# def calc_location_mean_val(db, feat):
+# 	n_samples = len(db['folder'])
+# 	data_agg = np.array([])
+# 	b_idx = db['begin_index']
+# 	e_idx = db['end_index']
+# 	for i in range(n_samples):
+# 		loc_raw = feat['coords'][b_idx[i]: e_idx[i]]  # (len, 6)
+#
+# 		data = np.zeros((loc_raw.shape[0], 20), dtype=np.float32)
+# 		data[:, 0: 2] = loc_raw[:, 0: 2]
+# 		data[:, 2: 4] = loc_raw[:, 2: 4]
+# 		data[:, 4: 6] = loc_raw[:, 0: 2] - loc_raw[:, 4: 6]
+# 		data[:, 6: 8] = loc_raw[:, 2: 4] - loc_raw[:, 4: 6]
+# 		data[:, 8:10] = loc_raw[:, 0: 2] - loc_raw[:, 2: 4]
+#
+# 		data[:, 10: ] = diff_locations(data[:, : 10])
+# 		data_agg = np.vstack((data_agg, data)) if data_agg.size else data
+#
+# 	data_mean = np.mean(data_agg, axis=0)
+# 	data_std = np.std(data_agg, axis=0)
+#
+# 	return data_mean, data_std
 
 def mkdir_safe(path):
 	if not os.path.exists(path):
