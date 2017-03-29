@@ -29,8 +29,10 @@ class Model(object):
 
         # variables
         data = T.tensor4('data')  # (3*nb, 3, 96, 96) or (nb*len, 3, 96, 96)
-        mask = T.matrix('mask')  # (nb, max_hlen)
-        token = T.imatrix('token')  # (nb, max_vlen)
+        token = T.ivector('token')  # (nb, max_vlen)
+        weight = T.vector('weight')
+        self.nb = weight.shape[0]
+
         # label = T.imatrix('label')  # (nb, voca_size)
 
         net = {}
@@ -55,17 +57,16 @@ class Model(object):
 
         # encoding network for image features
         net['mask'] = InputLayer(shape=(None, None), name='mask')  # (nb, max_hlen)
-        self.nb = mask.shape[0]
-        self.max_hlen = mask.shape[1]
 
         net['pre_conv1d'] = DimshuffleLayer(ReshapeLayer(incoming=NonlinearityLayer(net['fc6'], nonlinearity=rectify), shape=(self.nb, -1, 1024)), (0, 2, 1))
         net['conv1d_1'] = Conv1DLayer(net['pre_conv1d'], num_filters=1024, filter_size=3, pad='same')
         net['pool1d_1'] = MaxPool1DLayer(net['conv1d_1'], pool_size=2)	#(nb, 1024, max_hlen)
-        net['drop1d_1'] = DropoutLayer(net['pool1d_1'], p=0.1, shared_axes=(2,))
+        net['drop1d_1'] = DropoutLayer(net['pool1d_1'], p=0.5, shared_axes=(2,))
 
         net['conv1d_2'] = Conv1DLayer(net['drop1d_1'], num_filters=1024, filter_size=3, pad='same')
         net['pool1d_2'] = MaxPool1DLayer(net['conv1d_2'], pool_size=2)	#(nb, 1024, max_hlen)
-        net['drop1d_2'] = DropoutLayer(net['pool1d_2'], p=0.1, shared_axes=(2,))
+        net['drop1d_2'] = DropoutLayer(net['pool1d_2'], p=0.5, shared_axes=(2,))
+        net['classify'] = DenseLayer(ReshapeLayer(net['drop1d_2'], shape=(-1, 1024)), self.nClasses, nonlinearity=softmax)
 
         # LSTM
         net['lstm_input'] = InputLayer(shape=(None, None, 1024), name='lstm_input')
@@ -99,7 +100,22 @@ class Model(object):
         os.system('rm -rf dummy.pkl')
         glog.info('dummy save load success, remove it and start calculate outputs...')
 
-        if phase == 'pretrain':
+        if phase == 'cnn_training':
+            self.params_full = lasagne.layers.get_all_params(self.net['classify'], trainable=True)
+            self.regular_params = lasagne.layers.get_all_params(self.net['classify'], regularizable=True)
+            regular_full = lasagne.regularization.apply_penalty(self.regular_params, lasagne.regularization.l2) * np.array(5e-4/2, dtype=np.float32)
+
+            classify_loss_train, classify_acc1_train, classify_acc5_train = self.get_classify_loss(data, token, weight, deterministic=False)
+            classify_loss_valid, classify_acc1_valid, classify_acc5_valid = self.get_classify_loss(data, token, weight, deterministic=True)
+
+            loss_train_full = regular_full + classify_loss_train.mean()
+            loss_valid_full = regular_full + classify_loss_valid.mean()
+
+            updates = lasagne.updates.adam(loss_train_full, self.params_full, learning_rate=self.learning_rate)
+            self.train_func = theano.function([data, token, weight], [loss_train_full, classify_loss_train.mean(), classify_acc1_train.mean(), classify_acc5_train.mean()], updates=updates)
+            self.valid_func = theano.function([data, token, weight], [loss_valid_full, classify_loss_valid.mean(), classify_acc1_valid.mean(), classify_acc5_valid.mean()])
+
+        elif phase == 'pretrain':
             pass
             # # for triplet pretrain use
             # self.params_feat = get_all_params(net['fc7'])
@@ -117,48 +133,45 @@ class Model(object):
             # self.inputs = [data]
             # self.train_outputs = [loss_train_feat, triplet_loss_train]
             # self.valid_outputs = [loss_valid_feat, triplet_loss_valid]
-        elif phase == 'ctc':
-            # for ctc loss
-            self.params_full = lasagne.layers.get_all_params([self.net['drop1d_2'], self.net['out_lin']], trainable=True)
-            self.regular_params = lasagne.layers.get_all_params([self.net['drop1d_2'], self.net['out_lin']], regularizable=True)
-            regular_full = lasagne.regularization.apply_penalty(self.regular_params, lasagne.regularization.l2) * np.array(5e-4/2, dtype=np.float32)
-
-            # full train loss
-            ctc_loss_train, pred_train = self.get_ctc_loss(data, mask, token, deteministic=False)
-            loss_train_full = ctc_loss_train + regular_full
-
-            # full valid loss
-            ctc_loss_valid, pred_valid = self.get_ctc_loss(data, mask, token, deteministic=True)
-            loss_valid_full = ctc_loss_valid + regular_full
-
-            self.updates = lasagne.updates.adam(loss_train_full, self.params_full, learning_rate=self.learning_rate)
-            self.inputs = [data, mask, token]
-            self.train_outputs = [loss_train_full, ctc_loss_train, pred_train]
-            self.valid_outputs = [loss_valid_full, ctc_loss_valid, pred_valid]
-        elif phase == 'extract_feature':
-            # for feature extraction
-            fc6 = get_output(self.net['fc6'], data, deterministic = True)
-            self.feature_func = theano.function(inputs=[data], outputs=fc6)
-        elif phase == 'get_prediction':
-            embeding = get_output(self.net['drop1d_2'], data, deterministic=True)  # (nb, 1024, len_m)
-            output_lin = get_output(self.net['out_lin'], {self.net['lstm_input']: T.transpose(embeding, (0, 2, 1)), self.net['mask']: mask}, deterministic=True)
-
-            output_softmax = Softmax(output_lin)  # (nb, max_hlen, nClasses)
-            output_trans = T.transpose(output_softmax, (1, 0, 2))  # (max_hlen, nb, nClasses)
-
-            best_path_loss, best_path = best_right_path_cost(output_trans, mask, token)
-            ctc_loss = ctc_cost(output_trans, T.sum(mask, axis=1, dtype='int32'), token)
-
-            # (nb, max_hlen, voca_size+1)
-            self.predict_func = theano.function(inputs=[data, mask, token], outputs=[best_path_loss, best_path, ctc_loss])
+        # elif phase == 'ctc':
+        #     # for ctc loss
+        #     self.params_full = lasagne.layers.get_all_params([self.net['drop1d_2'], self.net['out_lin']], trainable=True)
+        #     self.regular_params = lasagne.layers.get_all_params([self.net['drop1d_2'], self.net['out_lin']], regularizable=True)
+        #     regular_full = lasagne.regularization.apply_penalty(self.regular_params, lasagne.regularization.l2) * np.array(5e-4/2, dtype=np.float32)
+        #
+        #     # full train loss
+        #     ctc_loss_train, pred_train = self.get_ctc_loss(data, mask, token, deteministic=False)
+        #     loss_train_full = ctc_loss_train + regular_full
+        #
+        #     # full valid loss
+        #     ctc_loss_valid, pred_valid = self.get_ctc_loss(data, mask, token, deteministic=True)
+        #     loss_valid_full = ctc_loss_valid + regular_full
+        #
+        #     self.updates = lasagne.updates.adam(loss_train_full, self.params_full, learning_rate=self.learning_rate)
+        #     self.inputs = [data, mask, token]
+        #     self.train_outputs = [loss_train_full, ctc_loss_train, pred_train]
+        #     self.valid_outputs = [loss_valid_full, ctc_loss_valid, pred_valid]
+        # elif phase == 'extract_feature':
+        #     # for feature extraction
+        #     fc6 = get_output(self.net['fc6'], data, deterministic = True)
+        #     self.feature_func = theano.function(inputs=[data], outputs=fc6)
+        # elif phase == 'get_prediction':
+        #     embeding = get_output(self.net['drop1d_2'], data, deterministic=True)  # (nb, 1024, len_m)
+        #     output_lin = get_output(self.net['out_lin'], {self.net['lstm_input']: T.transpose(embeding, (0, 2, 1)), self.net['mask']: mask}, deterministic=True)
+        #
+        #     output_softmax = Softmax(output_lin)  # (nb, max_hlen, nClasses)
+        #     output_trans = T.transpose(output_softmax, (1, 0, 2))  # (max_hlen, nb, nClasses)
+        #
+        #     best_path_loss, best_path = best_right_path_cost(output_trans, mask, token)
+        #     ctc_loss = ctc_cost(output_trans, T.sum(mask, axis=1, dtype='int32'), token)
+        #
+        #     # (nb, max_hlen, voca_size+1)
+        #     self.predict_func = theano.function(inputs=[data, mask, token], outputs=[best_path_loss, best_path, ctc_loss])
 
         glog.info('Model built, phase = %s'%phase)
-        glog.info('Model built, phase = %s'%phase)
-
-
-    def make_functions(self):
-        self.train_func = theano.function(inputs=self.inputs, outputs=self.train_outputs, updates=self.updates)
-        self.valid_func = theano.function(inputs=self.inputs, outputs=self.valid_outputs)
+    # def make_functions(self):
+    #     self.train_func = theano.function(inputs=self.inputs, outputs=self.train_outputs, updates=self.updates)
+    #     self.valid_func = theano.function(inputs=self.inputs, outputs=self.valid_outputs)
 
     def get_triplet_loss(self, data, deterministic=False):
         fc7 = get_output(self.net['fc7'], data, deterministic=deterministic)  # (3, nb, 256)
@@ -192,16 +205,19 @@ class Model(object):
 
         return ctc_loss, pred
 
+    def get_classify_loss(self, data, token, weight, deterministic=False):
+        pred = get_output(self.net['classify'], data, deterministic=deterministic)
+        classify_loss = lasagne.objectives.categorical_crossentropy(pred, token) * weight
+        classify_acc_1 = lasagne.objectives.categorical_accuracy(pred, token, top_k=1)
+        classify_acc_5 = lasagne.objectives.categorical_accuracy(pred, token, top_k=5)
+
+        return classify_loss, classify_acc_1, classify_acc_5
 
     def load_model(self, model_file):
         with open(model_file) as f:
             params_0 = pickle.load(f)
-            params_1 = pickle.load(f)
-            # params_2 = pickle.load(f)
 
-        lasagne.layers.set_all_param_values(self.net['drop1d_2'], params_0)
-        lasagne.layers.set_all_param_values(self.net['out_lin'], params_1)
-        # lasagne.layers.set_all_param_values(self.net['det_lin'], params_2)
+        lasagne.layers.set_all_param_values(self.net['classify'], params_0)
         glog.info('load model from %s' % os.path.basename(model_file))
 
     def load_model_feat(self, model_file):
@@ -224,14 +240,11 @@ class Model(object):
     # 			glog.info('layer [%s] loaded from caffemodel' % k)
 
     def save_model(self, model_file):
-        params_0 = lasagne.layers.get_all_param_values(self.net['drop1d_2'])
-        params_1 = lasagne.layers.get_all_param_values(self.net['out_lin'])
-        # params_2 = lasagne.layers.get_all_param_values(self.net['det_lin'])
+        params_0 = lasagne.layers.get_all_param_values(self.net['classify'])
+        # params_1 = lasagne.layers.get_all_param_values(self.net['out_lin'])
 
         with open(model_file, 'wb') as f:
             pickle.dump(params_0, f)
-            pickle.dump(params_1, f)
-            # pickle.dump(params_2, f)
 
     def set_learning_rate(self, to_lr=None):
         if not to_lr is None:

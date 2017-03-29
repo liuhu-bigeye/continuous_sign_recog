@@ -118,8 +118,11 @@ def best_right_path_cost(pred, mask, token, blank=0):
     min_full_path, _ = theano.scan(lambda m_path, argm_pos, m_full_path: argm_pos[T.arange(nb), T.maximum(m_path, m_full_path).astype('int32')].astype('int32'),
                                    sequences=[min_path[::-1], argmin_pos_1[::-1]], outputs_info=[min_path[-1]])
     argmin_pos = T.concatenate((min_full_path[::-1], min_path[-1][None, :]), axis=0) # (T, nb)
+    argmin_pos = T.set_subtensor(argmin_pos[pred_len-1, T.arange(nb)], 2*token_len-1+argmin_labels)
+
     argmin_token = token_with_blank[T.arange(nb)[None, :], argmin_pos]
 
+    # (nb,), (nb, T)
     return cost, (argmin_token.transpose((1, 0))*mask + mask - 1).astype('int32')# alpha, log_probability, argmin_pos_1, argmin_labels, min_path, min_full_path, argmin_pos, token_with_blank, argmin_token
 
 def greedy_cost(pred, mask):
