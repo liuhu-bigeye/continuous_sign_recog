@@ -15,7 +15,7 @@ def valid(model, valid_set, config, epoch):
     losses = np.array([])
     # inputs: feat, token, weight
     # returns: loss_all, loss_classify, acc1, acc5
-    for valid_inputs in valid_set.iterate(return_folder=True):
+    for valid_inputs in valid_set.iterate():
         valid_return = model.valid_func(*valid_inputs)
         losses = np.vstack((losses, valid_return)) if losses.shape != (0,) else np.array(valid_return)
 

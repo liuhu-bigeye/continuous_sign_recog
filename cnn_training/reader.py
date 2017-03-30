@@ -9,7 +9,7 @@ import numpy as np
 sys.path.insert(0, '/home/liuhu/workspace/journal/')
 from utils import im_augmentation
 
-database_file = '/home/liuhu/workspace/journal/all_vgg_s/output/ctc_predict_2017-03-28_20-41-05/ctc_best_path_63_0.412_0.411.pkl'   # token, weight, indices
+database_file = '/home/liuhu/workspace/journal/all_vgg_s/output/ctc_predict_2017-03-28_20-41-05/ctc_best_path_63_0.412_0.411_off0.pkl'   # token, weight, indices, mask
 data_file = '/var/disk1/RWTH2014/cropped_right_hand.h5'
 
 class Reader(object):
@@ -22,10 +22,13 @@ class Reader(object):
             db = pickle.load(f)
             self.db = db[phase]
             # {'folder': [], 'signer': [], 'annotation': [], 'vocabulary': [], 'token': [], 'begin_index': [], 'end_index': []}
+        glog.info('dataset loaded...')
 
         self.tokens = self.db['token']
         self.weights = self.db['weight']
         self.indices = self.db['indices']
+        self.masks = self.db['mask']
+
         self.imgs = h5py.File(data_file)['images']
         self.batch_size = batch_size
 
@@ -55,6 +58,10 @@ class Reader(object):
             max_x_len = max(x_len)
             assert max_x_len<=10
 
+            mask = [self.masks[i] for i in indices]
+            assert x_len == map(sum, mask)
+            mask_pre = map(lambda x:x.index(1), mask)
+
             token = np.array([self.tokens[i] for i in indices], dtype=np.int32)
             feat = np.zeros((batch_size, 10, 3, 101, 101), dtype=np.float32)
             weight = np.array([self.weights[i] for i in indices], dtype=np.float32)
@@ -63,11 +70,12 @@ class Reader(object):
             for i in range(batch_size):
                 feat_aug = self.get_imgs(img_indices[i])
                 assert x_len[i] == feat_aug.shape[0]
-                feat[i, :x_len[i]] = feat_aug
+                feat[i, mask_pre[i]:mask_pre[i]+x_len[i]] = feat_aug
 
             feat = np.reshape(np.float32(feat), (-1, 3, 101, 101))  # (batch_size*X_len, 3, 101, 101)
+            mask = np.tile(np.array(mask, dtype=np.float32)[:, None, 1:-1:2], (1, 1024, 1))
 
-            yields = [feat, token, weight]
+            yields = [feat, token, weight, mask]
 
             yield yields
 

@@ -7,7 +7,7 @@ import numpy as np
 np.random.seed(1111)
 
 prediction_path = '/home/liuhu/workspace/journal/all_vgg_s/output/ctc_predict_2017-03-28_20-41-05/ctc_best_path_63_0.412_0.411.h5'
-output_path = prediction_path[:-3]+'.pkl'
+output_path = prediction_path[:-3]+'.pklll'
 
 stride = 4
 rec_field = 10
@@ -19,7 +19,7 @@ if __name__ == '__main__':
 
     db_out = {}
     for phase in ['train', 'valid']:
-        db_out[phase] = {'token':[], 'weight':[], 'indices':[]}
+        db_out[phase] = {'token':[], 'weight':[], 'indices':[], 'mask':[]}
 
     n_samples = len(db['token'])
     valid_set_rate = 0.09   # may nearby segments split into train set and valid set, however is valuable for whole train set continuity
@@ -27,9 +27,10 @@ if __name__ == '__main__':
 
     for idx in range(n_samples):
         phase = phases[int(np.random.random() < valid_set_rate)]
-        for offset in range(4):
-            if df['ctc_loss_%d'%offset][idx] > 20 or df['best_path_loss_%d'%offset][idx] > 20:
-                print idx, offset, df['ctc_loss_%d'%offset][idx], df['best_path_loss_%d'%offset][idx], 'loss out of bound, neglected'
+        for offset in range(1):
+            if df['ctc_loss_%d'%offset][idx] > 5 or df['best_path_loss_%d'%offset][idx] > 5:
+                if df['ctc_loss_%d'%offset][idx] < 80:
+                    print idx, offset, df['ctc_loss_%d'%offset][idx], df['best_path_loss_%d'%offset][idx], np.exp(df['ctc_loss_%d'%offset][idx] - df['best_path_loss_%d'%offset][idx]), 'loss out of bound, neglected'
                 continue
 
             begin_index, end_index = db['begin_index'][idx] + offset, db['end_index'][idx]
@@ -47,10 +48,14 @@ if __name__ == '__main__':
 
             db_out[phase]['token'].extend(alignment[:h_len])
             db_out[phase]['weight'].extend([weight]*h_len)
-            indices = [[begin_index + upsamp_indices[j] for j in range(max(0, h*stride-3), min(h*stride+7, end_index-begin_index))] for h in range(h_len)]
-            db_out[phase]['indices'].extend(indices)
 
-        if idx%40==0:
+            indices = [[begin_index + upsamp_indices[j] for j in range(max(0, h*stride-3), min(h*stride+7, len(upsamp_indices)))] for h in range(h_len)]
+            mask = [[int(k>=0 and k<len(upsamp_indices)) for k in range(h*stride-3, h*stride+7)] for h in range(h_len)]
+
+            db_out[phase]['indices'].extend(indices)
+            db_out[phase]['mask'].extend(mask)
+
+        if idx%400==0:
             print idx
 
     with open(output_path, 'wb') as f:

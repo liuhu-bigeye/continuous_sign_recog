@@ -31,6 +31,7 @@ class Model(object):
         data = T.tensor4('data')  # (3*nb, 3, 96, 96) or (nb*len, 3, 96, 96)
         token = T.ivector('token')  # (nb, max_vlen)
         weight = T.vector('weight')
+        mask = T.tensor3('mask')
         self.nb = weight.shape[0]
 
         # label = T.imatrix('label')  # (nb, voca_size)
@@ -56,14 +57,15 @@ class Model(object):
         net['fc7'] = DenseLayer(incoming=net['drop6'], num_units=256, nonlinearity=identity)  # (3*nb, 256)
 
         # encoding network for image features
-        net['mask'] = InputLayer(shape=(None, None), name='mask')  # (nb, max_hlen)
+        net['mask'] = InputLayer(shape=(None, None, None), name='mask')  # (nb, mask_len)
 
         net['pre_conv1d'] = DimshuffleLayer(ReshapeLayer(incoming=NonlinearityLayer(net['fc6'], nonlinearity=rectify), shape=(self.nb, -1, 1024)), (0, 2, 1))
-        net['conv1d_1'] = Conv1DLayer(net['pre_conv1d'], num_filters=1024, filter_size=3, pad='same')
+        net['conv1d_1'] = Conv1DLayer(net['pre_conv1d'], num_filters=1024, filter_size=3, pad='valid')
         net['pool1d_1'] = MaxPool1DLayer(net['conv1d_1'], pool_size=2)	#(nb, 1024, max_hlen)
         net['drop1d_1'] = DropoutLayer(net['pool1d_1'], p=0.5, shared_axes=(2,))
+        net['masked_drop1d_1'] = ElemwiseMergeLayer([net['drop1d_1'], net['mask']], merge_function=T.mul)
 
-        net['conv1d_2'] = Conv1DLayer(net['drop1d_1'], num_filters=1024, filter_size=3, pad='same')
+        net['conv1d_2'] = Conv1DLayer(net['masked_drop1d_1'], num_filters=1024, filter_size=3, pad='valid')
         net['pool1d_2'] = MaxPool1DLayer(net['conv1d_2'], pool_size=2)	#(nb, 1024, max_hlen)
         net['drop1d_2'] = DropoutLayer(net['pool1d_2'], p=0.5, shared_axes=(2,))
         net['classify'] = DenseLayer(ReshapeLayer(net['drop1d_2'], shape=(-1, 1024)), self.nClasses, nonlinearity=softmax)
@@ -105,15 +107,15 @@ class Model(object):
             self.regular_params = lasagne.layers.get_all_params(self.net['classify'], regularizable=True)
             regular_full = lasagne.regularization.apply_penalty(self.regular_params, lasagne.regularization.l2) * np.array(5e-4/2, dtype=np.float32)
 
-            classify_loss_train, classify_acc1_train, classify_acc5_train = self.get_classify_loss(data, token, weight, deterministic=False)
-            classify_loss_valid, classify_acc1_valid, classify_acc5_valid = self.get_classify_loss(data, token, weight, deterministic=True)
+            classify_loss_train, classify_acc1_train, classify_acc5_train = self.get_classify_loss(data, token, weight, mask, deterministic=False)
+            classify_loss_valid, classify_acc1_valid, classify_acc5_valid = self.get_classify_loss(data, token, weight, mask, deterministic=True)
 
             loss_train_full = regular_full + classify_loss_train.mean()
             loss_valid_full = regular_full + classify_loss_valid.mean()
 
             updates = lasagne.updates.adam(loss_train_full, self.params_full, learning_rate=self.learning_rate)
-            self.train_func = theano.function([data, token, weight], [loss_train_full, classify_loss_train.mean(), classify_acc1_train.mean(), classify_acc5_train.mean()], updates=updates)
-            self.valid_func = theano.function([data, token, weight], [loss_valid_full, classify_loss_valid.mean(), classify_acc1_valid.mean(), classify_acc5_valid.mean()])
+            self.train_func = theano.function([data, token, weight, mask], [loss_train_full, classify_loss_train.mean(), classify_acc1_train.mean(), classify_acc5_train.mean()], updates=updates)
+            self.valid_func = theano.function([data, token, weight, mask], [loss_valid_full, classify_loss_valid.mean(), classify_acc1_valid.mean(), classify_acc5_valid.mean()])
 
         elif phase == 'pretrain':
             pass
@@ -205,8 +207,8 @@ class Model(object):
 
         return ctc_loss, pred
 
-    def get_classify_loss(self, data, token, weight, deterministic=False):
-        pred = get_output(self.net['classify'], data, deterministic=deterministic)
+    def get_classify_loss(self, data, token, weight, mask, deterministic=False):
+        pred = get_output(self.net['classify'], {self.net['input']: data, self.net['mask']: mask}, deterministic=deterministic)
         classify_loss = lasagne.objectives.categorical_crossentropy(pred, token) * weight
         classify_acc_1 = lasagne.objectives.categorical_accuracy(pred, token, top_k=1)
         classify_acc_5 = lasagne.objectives.categorical_accuracy(pred, token, top_k=5)
