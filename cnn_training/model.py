@@ -62,7 +62,7 @@ class Model(object):
         net['pre_conv1d'] = DimshuffleLayer(ReshapeLayer(incoming=NonlinearityLayer(net['fc6'], nonlinearity=rectify), shape=(self.nb, -1, 1024)), (0, 2, 1))
         net['conv1d_1'] = Conv1DLayer(net['pre_conv1d'], num_filters=1024, filter_size=3, pad='valid')
         net['pool1d_1'] = MaxPool1DLayer(net['conv1d_1'], pool_size=2)	#(nb, 1024, max_hlen)
-        net['drop1d_1'] = DropoutLayer(net['pool1d_1'], p=0.5, shared_axes=(2,))
+        net['drop1d_1'] = DropoutLayer(net['pool1d_1'], p=0.2, shared_axes=(2,))
         net['masked_drop1d_1'] = ElemwiseMergeLayer([net['drop1d_1'], net['mask']], merge_function=T.mul)
 
         net['conv1d_2'] = Conv1DLayer(net['masked_drop1d_1'], num_filters=1024, filter_size=3, pad='valid')
