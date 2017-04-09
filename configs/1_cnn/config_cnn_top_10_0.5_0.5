@@ -1,0 +1,23 @@
+# configs startswith '='
+# no '' for string
+# readme begin after ----
+# log will be saved if only with more than 5 Iterations
+
+phase=cnn_training
+model_feat=/home/liuhu/workspace/fight_4_cvpr/all_vgg_s/snapshot_feat/best_epochs/132
+
+gpu=1
+lr=5e-5
+batch_size=100
+disp_iter=40
+patience=10
+max_epoch=100
+
+snap_path=DIR/snapshot
+prefix=cnn_all_vgg_s
+
+----
+This is a phase 1 all_vgg_s model, for cnn training
+Finetuned from triplet pretrained model
+Hard em, top 10 paths
+0.5, 0.5 dropout

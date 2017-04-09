@@ -10,7 +10,7 @@ from lasagne.layers import *
 from lasagne.nonlinearities import *
 # import caffe
 
-from try_ctc.m_ctc_cost import ctc_cost, best_right_path_cost
+from try_ctc.m_ctc_cost import ctc_cost, best_right_path_cost, top_k_right_path_cost
 from utils import Softmax
 
 class Model(object):
@@ -151,8 +151,19 @@ class Model(object):
 
             # (nb, max_hlen, voca_size+1)
             self.predict_func = theano.function(inputs=[data, mask, token], outputs=[best_path_loss, best_path, ctc_loss])
+        elif phase == 'top_k_prediction':
+            embeding = get_output(self.net['drop1d_2'], data, deterministic=True)  # (nb, 1024, len_m)
+            output_lin = get_output(self.net['out_lin'], {self.net['lstm_input']: T.transpose(embeding, (0, 2, 1)), self.net['mask']: mask}, deterministic=True)
 
-        glog.info('Model built, phase = %s'%phase)
+            output_softmax = Softmax(output_lin)  # (nb, max_hlen, nClasses)
+            output_trans = T.transpose(output_softmax, (1, 0, 2))  # (max_hlen, nb, nClasses)
+
+            top_k_path_loss, top_k_path = top_k_right_path_cost(output_trans, mask, token, k=config.items['top_k'])
+            ctc_loss = ctc_cost(output_trans, T.sum(mask, axis=1, dtype='int32'), token)
+
+            # (nb, max_hlen, voca_size+1)
+            self.predict_func = theano.function(inputs=[data, mask, token], outputs=[output_lin, top_k_path_loss, top_k_path, ctc_loss])
+
         glog.info('Model built, phase = %s'%phase)
 
 
@@ -205,11 +216,19 @@ class Model(object):
         glog.info('load model from %s' % os.path.basename(model_file))
 
     def load_model_feat(self, model_file):
-        with open(model_file) as f:
+        with open(model_file, 'rb') as f:
             params_0 = pickle.load(f)
         params_0 = params_0[:6*2]	# params before fc6
         set_all_param_values(self.net['fc6'], params_0)
         glog.info('load feat model from %s' % os.path.basename(model_file))
+
+
+    def load_model_before_lstm(self, model_file):
+        with open(model_file, 'rb') as f:
+            params_0 = pickle.load(f)
+        params_0 = params_0[:8*2]   # params before fc6
+        set_all_param_values(self.net['drop1d_2'], params_0)
+        glog.info('load before lstm model from %s' % os.path.basename(model_file))
 
     # def load_caffemodel(self, proto, caffemodel):
     # 	caffe.set_mode_cpu()

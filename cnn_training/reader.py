@@ -9,7 +9,8 @@ import numpy as np
 sys.path.insert(0, '/home/liuhu/workspace/journal/')
 from utils import im_augmentation
 
-database_file = '/home/liuhu/workspace/journal/all_vgg_s/output/ctc_predict_2017-03-28_20-41-05/ctc_best_path_63_0.412_0.411_off0.pkl'   # token, weight, indices, mask
+# database_file = '/home/liuhu/workspace/journal/all_vgg_s/output/ctc_predict_2017-03-28_20-41-05/ctc_best_path_63_0.412_0.411_off0.pkl'   # token, weight, indices, mask
+database_file = '/home/liuhu/workspace/journal/all_vgg_s/output/ctc_predict_top_k_2017-04-05_20-02-09/ctc_best_path_63_0.412_0.411_top_10.pkl'   # token, weight, indices, mask
 data_file = '/var/disk1/RWTH2014/cropped_right_hand.h5'
 
 class Reader(object):

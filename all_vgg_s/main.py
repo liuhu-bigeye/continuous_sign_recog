@@ -127,6 +127,38 @@ def get_prediction(model, train_set, config):
             begin_index = end_index
     df.close()
 
+def get_top_k_prediction(model, train_set, config):
+    k = config.items['top_k']
+
+    df = h5py.File(config.items['prediction_path'], 'w')
+    df.create_dataset('top_k_alignment', shape=(train_set.n_samples, train_set.max_h_len, k), dtype=np.int32)
+    df.create_dataset('mask', shape=(train_set.n_samples, train_set.max_h_len), dtype=np.float32)
+    df.create_dataset('upsamp_indices', shape=(train_set.n_samples, train_set.max_X_len), dtype=np.int32)
+    df.create_dataset('weight', shape=(train_set.n_samples, k), dtype=np.float32)
+    df.create_dataset('ctc_loss', shape=(train_set.n_samples,), dtype=np.float32)
+    df.create_dataset('top_k_path_loss', shape=(train_set.n_samples, k), dtype=np.float32)
+    df.create_dataset('output_lin', shape=(train_set.n_samples, train_set.max_h_len, 1296), dtype=np.float32)
+
+    begin_index, end_index = 0, 0
+    for iter, (feat, mask, token, upsamp_indices) in enumerate(train_set.iterate(offset=0, return_upsamp_indices=True)):
+        if iter % config.items['disp_iter']==0:
+            glog.info('feature extracting, %d'%iter)
+        output_lin, top_k_path_loss, top_k_path, ctc_loss = model.predict_func(feat, mask, token)
+        num, h_len, _ = top_k_path.shape
+        end_index += num
+        df['top_k_alignment'][begin_index: end_index, :h_len] = top_k_path
+        df['mask'][begin_index: end_index, :h_len] = mask
+        df['weight'][begin_index: end_index] = np.exp(ctc_loss[:, None] - top_k_path_loss)
+        df['ctc_loss'][begin_index: end_index] = ctc_loss
+        df['top_k_path_loss'][begin_index: end_index] = top_k_path_loss
+        df['output_lin'][begin_index: end_index, :h_len] = output_lin
+
+        for i, idx in enumerate(range(begin_index, end_index)):
+            df['upsamp_indices'][idx, :len(upsamp_indices[i])] = upsamp_indices[i]
+
+        begin_index = end_index
+    df.close()
+
 def main():
     if len(sys.argv) == 3:
         config = Config(sys.argv[1], sys.argv[2])
@@ -148,6 +180,9 @@ def main():
     elif 'model_feat' in config.items.keys():
         glog.info('loading feat model: %s...' % config.items['model_feat'])
         model.load_model_feat(config.items['model_feat'])
+    elif 'model_before_lstm' in config.items.keys():
+        glog.info('loading before lstm model: %s...' % config.items['model_before_lstm'])
+        model.load_model_before_lstm(config.items['model_before_lstm'])
 
     try:
         config.items['starting'] = int(config.items['model'].split('_')[-1])
@@ -159,10 +194,10 @@ def main():
     mkdir_safe(os.path.join(config.items['snap_path'], 'output_dev'))
     mkdir_safe(os.path.join(config.items['snap_path'], 'output_test'))
 
-    # model.make_functions()
     if phase == 'feat':
         pass
     elif phase == 'ctc':
+        model.make_functions()
         from reader import Reader
         train_set = Reader(phase='train', batch_size=config.items['batch_size'], do_shuffle=True, resample=True, distortion=True)
         valid_set = Reader(phase='dev', batch_size=1, do_shuffle=False, resample=False, distortion=False)
@@ -175,9 +210,13 @@ def main():
     elif phase == 'get_prediction':
         from reader import Reader
         train_set = Reader(phase='train', batch_size=config.items['batch_size'], do_shuffle=False, resample=False, distortion=False)
-
         glog.info('feature extracting...')
         get_prediction(model, train_set, config)
+    elif phase == 'top_k_prediction':
+        from reader import Reader
+        train_set = Reader(phase='train', batch_size=config.items['batch_size'], do_shuffle=False, resample=False, distortion=False)
+        glog.info('feature extracting...')
+        get_top_k_prediction(model, train_set, config)
 
     glog.info('end')
 

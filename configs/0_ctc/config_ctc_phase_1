@@ -1,0 +1,20 @@
+# configs startswith '='
+# no '' for string
+# readme begin after ----
+# log will be saved if only with more than 5 Iterations
+
+phase=ctc
+model_before_lstm=/home/liuhu/workspace/journal/cnn_training/output/cnn_training_2017-03-30_16-31-43/snapshot/cnn_all_vgg_s_epoch_0010
+
+gpu=2
+lr=5e-5
+batch_size=2
+disp_iter=200
+patience=10
+max_epoch=100
+
+snap_path=DIR/snapshot
+prefix=ctc_phase_1_fine_all_vgg_conv1d
+
+----
+This is a phase 1 all_vgg_s model, finetuned from cnn and conv1d*2

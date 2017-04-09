@@ -1,0 +1,21 @@
+# configs startswith '='
+# no '' for string
+# readme begin after ----
+# log will be saved if only with more than 5 Iterations
+
+phase=ctc
+model=/home/liuhu/workspace/journal/all_vgg_s/output/ctc_p1_from_0.2_0.5_0.3715_2017-04-05_14-15-28/snapshot/ctc_phase_1_fine_all_vgg_cnn_from_0.2_0.5_0.3715_epoch_0037
+
+gpu=1
+lr=1e-5
+batch_size=2
+disp_iter=200
+patience=10
+max_epoch=100
+
+snap_path=DIR/snapshot
+prefix=ctc_phase_1_2_5_ep37_399
+
+----
+This is a phase 1 all_vgg_s model, finetuned from cnn, cnn training with 0.2 and 0.5 dropout rate
+continue due to power off
