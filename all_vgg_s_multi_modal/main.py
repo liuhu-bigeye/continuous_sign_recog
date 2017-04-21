@@ -8,7 +8,9 @@ import numpy as np
 np.set_printoptions(precision=4)
 
 import sys
-sys.path.insert(0, '/home/liuhu/workspace/journal/')
+sys.path.insert(0, '..')
+from utils import mkdir_safe, log_self
+
 from loader_config import Config
 from evaluate.eval_utils import convert_pred_to_hypo, evaluate
 
@@ -166,8 +168,6 @@ def main():
         assert False
 
     phase = config.items['phase']
-    from utils import mkdir_safe, log_self
-    # log_self(__file__)
 
     glog.info('generating model...')
     from model import Model

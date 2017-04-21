@@ -1,0 +1,21 @@
+# configs startswith '='
+# no '' for string
+# readme begin after ----
+# log will be saved if only with more than 5 Iterations
+
+phase=ctc
+model_feat=/home/liuhu/workspace/journal/cnn_training_soft/output/cnn_soft_2017-04-10_15-19-14/snapshot/cnn_all_vgg_s_soft_epoch_0010
+
+gpu=2
+lr=5e-5
+batch_size=2
+disp_iter=200
+patience=10
+max_epoch=100
+
+snap_path=DIR/snapshot
+prefix=ctc_phase_1_fine_all_vgg_cnn_soft_epoch_10
+
+----
+This is a phase 1 all_vgg_s model, finetuned from cnn, cnn training with 0.2 and 0.5 dropout rate
+soft model
