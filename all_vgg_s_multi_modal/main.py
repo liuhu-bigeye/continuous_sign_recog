@@ -8,7 +8,7 @@ import numpy as np
 np.set_printoptions(precision=4)
 
 import sys
-sys.path.insert(0, '..')
+sys.path.insert(0, '/home/liuhu/workspace/journal')
 from utils import mkdir_safe, log_self
 
 from loader_config import Config
@@ -174,7 +174,10 @@ def main():
     model = Model(phase=phase, config=config)
 
     # load model
-    if 'model' in config.items.keys():
+    if 'caffemodel' in config.items.keys():
+        glog.info('loading caffemodel: %s...' % config.items['caffemodel'])
+        model.load_caffemodel(config.items['proto'], config.items['caffemodel'])
+    elif 'model' in config.items.keys():
         glog.info('loading model: %s...' % config.items['model'])
         model.load_model(config.items['model'])
     elif 'model_feat' in config.items.keys():

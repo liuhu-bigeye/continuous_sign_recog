@@ -1,3 +1,28 @@
+'''
+                          _ooOoo_                                 
+                         o8888888o                                    
+                         88" . "88                                    
+                         (| ^_^ |)                                    
+                         O\  =  /O                                
+                      ____/`---'\____                                                     
+                    .'  \\|     |  `.                           
+                   /  \\|||  :  |||  \                              
+                  /  _||||| -:- |||||-  \                         
+                  |   | \\\  -  / |   |                         
+                  | \_|  ''\---/''  |   |                                 
+                  \  .-\__  `-`  ___/-. /                                 
+                ___`. .'  /--.--\  `. . ___                           
+              ."" '<  `.___\_<|>_/___.'  >'"".                    
+            | | :  `- \`.;`\ _ /`;.`/ - ` : | |                       
+            \  \ `-.   \_ __\ /__ _/   .-` /  /                   
+      ========`-.____`-.___\_____/___.-`____.-'========               
+                           `=---='                                
+
+no change, no bug
+
+loss will converge quickly and smoothly
+
+'''
 import os
 import glog
 import pickle
@@ -8,10 +33,10 @@ import lasagne
 
 from lasagne.layers import *
 from lasagne.nonlinearities import *
-# import caffe
+import caffe
 
 import sys
-sys.path.insert(0, '..')
+sys.path.insert(0, '/home/liuhu/workspace/journal/try_ctc')
 from m_ctc_cost import ctc_cost, best_right_path_cost, top_k_right_path_cost
 from utils import Softmax
 
@@ -22,6 +47,7 @@ class Model(object):
         size = 101
         # model paras
         self.config = config
+        learning_rate = self.config.items['lr']
         self.alpha = np.array(1e-3, dtype=np.float32)
         self.eps = np.array(1e-6, dtype=np.float32)
         self.learning_rate = theano.shared(np.float32(config.items['lr']))
@@ -32,14 +58,13 @@ class Model(object):
         # variables
         image = T.tensor4('image')  # (2*nb*len, 3, 101, 101) or (2*3*nb, 3, 101, 101)
         opflow = T.tensor4('opflow')  # (2*nb*len, 2, 101, 101)
-        coord = T.matrix('coord')  # (nb, len, 20)
+        coord = T.tensor3('coord')  # (nb, len, 20)
 
         mask = T.matrix('mask')  # (nb, max_hlen)
         token = T.imatrix('token')  # (nb, max_vlen)
         # label = T.imatrix('label')  # (nb, voca_size)
 
         net = {}
-
 
         # RGB modal
         net['image'] = InputLayer(shape=(None, 3, size, size))  # (2*nb*len, 3, 101, 101)
@@ -80,7 +105,7 @@ class Model(object):
                                         outdim=2)  # (nb*len, 2048) or (3*nb, 2048)
 
         net['drop6'] = DropoutLayer(incoming=net['fc6_trans'], p=0.5)
-        net['fc7'] = DenseLayer(incoming=net['transform'], num_units=256, nonlinearity=identity)  # (3*nb, 256)
+        net['fc7'] = DenseLayer(incoming=net['drop6'], num_units=256, nonlinearity=identity)  # (3*nb, 256)
 
 
         # encoding network for image features
@@ -99,7 +124,7 @@ class Model(object):
 
 
         # location modal
-        net['coord'] = InputLayer(shape=(None, None, 20))
+        net['coord'] = InputLayer(shape=(None, 20, None))
         net['conv1d_1_cd'] = Conv1DLayer(net['coord'], num_filters=64, filter_size=3, pad='same')
         net['pool1d_1_cd'] = MaxPool1DLayer(net['conv1d_1_cd'], pool_size=2)  # (nb, 64, max_hlen)
         net['drop1d_1_cd'] = DropoutLayer(net['pool1d_1_cd'], p=0.1, shared_axes=(2,))
@@ -171,9 +196,10 @@ class Model(object):
             self.valid_outputs = [loss_valid_full, ctc_loss_valid, pred_valid]
 
         elif phase == 'extract_feature':
-            # for feature extraction
-            fc6 = get_output(self.net['fc6'], data, deterministic = True)
-            self.feature_func = theano.function(inputs=[data], outputs=fc6)
+            pass
+            # # for feature extraction
+            # fc6 = get_output(self.net['fc6'], data, deterministic = True)
+            # self.feature_func = theano.function(inputs=[data], outputs=fc6)
 
         elif phase == 'get_prediction':
             embeding = get_output(self.net['fusion_2'], {self.net['image']: image, 
@@ -261,11 +287,12 @@ class Model(object):
 
 
     def load_model_feat(self, model_file):
-        with open(model_file, 'rb') as f:
-            params_0 = pickle.load(f)
-        params_0 = params_0[: 11 * 2]  # params before fc6
-        set_all_param_values(self.net['fc6'], params_0)
-        glog.info('load feat model from %s' % os.path.basename(model_file))
+        pass
+        # with open(model_file, 'rb') as f:
+        #     params_0 = pickle.load(f)
+        # params_0 = params_0[: 11 * 2]  # params before fc6
+        # set_all_param_values(self.net['fc6'], params_0)
+        # glog.info('load feat model from %s' % os.path.basename(model_file))
 
 
     # def load_model_before_lstm(self, model_file):
@@ -279,14 +306,23 @@ class Model(object):
     def load_caffemodel(self, proto, caffemodel):
         caffe.set_mode_cpu()
         net = caffe.Net(proto, caffemodel, caffe.TEST)
-        for k, v in net.params.items():
-            if not k.startswith('fc'):
-                if k == 'conv1':
-                    self.net[k].W.set_value(v[0].data[:, ::-1, :, :])
-                else:
-                    self.net[k].W.set_value(v[0].data)
-                self.net[k].b.set_value(np.squeeze(v[1].data))
-                glog.info('layer [%s] loaded from caffemodel' % k)
+
+        for k in ['conv%d'%i for i in range(1, 6)]:
+            # for W: (out_channel, in_channel, filter_size, filter_size)
+            W, b = net.params[k]
+            if k == 'conv1':
+                self.net[k].W.set_value(W.data[:, ::-1, :, :])
+                self.net['%s_of' % k].W.set_value(W.data[:, 1::-1, :, :]*1.5)
+            else:
+                self.net[k].W.set_value(W.data)
+                self.net['%s_of' % k].W.set_value(W.data)
+            self.net[k].b.set_value(np.squeeze(b.data))
+            self.net['%s_of' % k].b.set_value(np.squeeze(b.data))
+
+            glog.info('layer [%s] loaded from caffemodel' % k)
+            glog.info('layer [%s_of] loaded from caffemodel' % k)
+
+        del net
 
 
     def save_model(self, model_file):

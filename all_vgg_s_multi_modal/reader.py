@@ -63,7 +63,7 @@ class Reader(object):
         self.max_X_len = max(X_len)
 
 
-    def iterate(self, offset=0, return_folder=False, return_upsamp_indices=False):
+    def iterate(self, return_folder=False, return_upsamp_indices=False):
         index = range(self.n_samples)
         if self.do_shuffle:
             random.shuffle(index)
@@ -77,19 +77,19 @@ class Reader(object):
             token = np.array([np.concatenate([self.tokens[idx], (max_y_len-y_len[i])*[-2]])+1 for i,idx in enumerate(indices)], dtype=np.int32)
 
             ID = [self.db['folder'][i] for i in indices]
-            b_idx = [b + offset for b in self.db['begin_index']]
+            b_idx = [b for b in self.db['begin_index']]
             e_idx = self.db['end_index']
 
             x_len = [e_idx[i] - b_idx[i] for i in indices]
 
-            if self.resample_at_end:
+            if self.resample_at_end:    # for estimate
                 h_len = [int(np.ceil(float(l - self.c3d_depth) / float(self.depth_stride))) + 1 for l in x_len]
                 X_Len = [(l - 1) * self.depth_stride + self.c3d_depth for l in h_len]
                 upsamp_indices = upsampling_at_end(x_len, self.c3d_depth, self.depth_stride)
-            elif self.resample == True:
+            elif self.resample == True: # for training
                 X_Len, upsamp_indices = resampling(x_len, self.c3d_depth, self.depth_stride)
                 h_len = [int(np.ceil(float(l - self.c3d_depth) / float(self.depth_stride)))+1 for l in X_Len]
-            else:
+            else:                       # for test and final prediction
                 h_len = [int(np.ceil(float(l - self.c3d_depth) / float(self.depth_stride)))+1 for l in x_len]
                 X_Len = [(l-1)*self.depth_stride + self.c3d_depth for l in h_len]
                 upsamp_indices = upsampling(x_len, self.c3d_depth, self.depth_stride)
@@ -99,7 +99,7 @@ class Reader(object):
 
             image = np.zeros((batch_size, max_X_Len, 2, 3, 101, 101), dtype=np.float32)
             oflow = np.zeros((batch_size, max_X_Len, 2, 2, 101, 101), dtype=np.float32)
-            coord = np.zeros((batch_size, max_X_Len, 20), dtype=np.float32)
+            coord = np.zeros((batch_size, 20, max_X_Len), dtype=np.float32)
             mask = [np.concatenate((np.ones(l), np.zeros(max_h_len - l))) for l in h_len]
 
             # gathering features
@@ -114,9 +114,9 @@ class Reader(object):
                 assert X_Len[i] == oflow_aug.shape[0]
                 oflow[i, :X_Len[i]] = oflow_aug
 
-                coord_raw = self.get_coord(range(b_idx[ind], e_idx[ind]))
+                coord_raw = self.get_coord(range(b_idx[ind], e_idx[ind]))   # have problem due to position augmentation
                 coord_aug = interp_images(coord_raw, upsamp_indices[i])  # (X_Len, 20)
-                coord[i, :X_Len[i]] = coord_aug
+                coord[i, :, :X_Len[i]] = coord_aug.transpose([1, 0])
 
 
             image = np.transpose(image, (2, 0, 1, 3, 4, 5))  # (2, batch_size, max_X_Len, 3, 101, 101)
@@ -155,10 +155,9 @@ class Reader(object):
         # return optical flow
         imgs = np.zeros((len(indexs), 2, 101, 101, 2), dtype=np.float32)
         for i, index in enumerate(indexs):
-            for k in xrange(len(self.image)):
+            for k in xrange(2):   # [right, left]
                 img = self.oflow[k][index].astype(np.float32)
                 img_resize = cv2.resize(img, (101, 101))
-
                 imgs[i, k] = img_resize
 
         imgs = np.reshape(imgs, (-1, 101, 101, 2))
@@ -169,6 +168,7 @@ class Reader(object):
 
 
     def get_imgs(self, indexs):
+        # same augmentation for one sentence
         # return RGB images
         imgs = np.zeros((len(indexs), 2, 101, 101, 3), dtype=np.float32)
         mean_file = np.array([123, 117, 102], dtype=np.float32)
@@ -187,7 +187,7 @@ class Reader(object):
         return imgs, mat
 
 
-    def check_inputs(self, indices, offset=0):
+    def check_inputs(self, indices):
         batch_size = len(indices)
 
         y_len = np.array([len(self.db['token'][i]) for i in indices], dtype=np.int32)
@@ -195,7 +195,7 @@ class Reader(object):
         token = np.array([np.concatenate([self.tokens[idx], (max_y_len-y_len[i])*[-2]])+1 for i,idx in enumerate(indices)], dtype=np.int32)
 
         ID = [self.db['folder'][i] for i in indices]
-        b_idx = [b + offset for b in self.db['begin_index']]
+        b_idx = [b for b in self.db['begin_index']]
         e_idx = self.db['end_index']
 
         x_len = [e_idx[i] - b_idx[i] for i in indices]
@@ -249,6 +249,10 @@ class Reader(object):
 
 if __name__ == '__main__':
     train_set = Reader(phase='train', batch_size=3, do_shuffle=True, resample=True, distortion=True)
+    for inputs in train_set.iterate():
+        print [s.shape for s in inputs]
+    exit(0)
+
     check_indices = np.array([  30,   32,   55])
 
     # image, oflow, coord, mask, token, ID, upsamp_indices = train_set.check_inputs(check_indices, offset=0)

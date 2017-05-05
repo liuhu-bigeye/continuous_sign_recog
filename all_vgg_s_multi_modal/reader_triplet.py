@@ -68,8 +68,8 @@ class Reader(object):
 
                 # assign original
                 chosen_index=random.choice(range(begin_index, end_index))
-                image[:, i], warp_mat = self.get_imgs(chosen_index)
-                oflow[:, i] = self.get_oflow(chosen_index, warp_mat)
+                # image[:, i], warp_mat = self.get_imgs(chosen_index)
+                # oflow[:, i] = self.get_oflow(chosen_index, warp_mat)
 
                 # assign positive
                 positive_indexs=range(max(begin_index, chosen_index-R), chosen_index-1)+range(chosen_index+2, min(end_index, chosen_index+R+1))    #(-3 to -2, 2 to 3)
@@ -82,8 +82,8 @@ class Reader(object):
                 if chosen_index - begin_index < 0.35*(end_index - begin_index) or end_index - chosen_index < 0.35*(end_index - begin_index):
                     stationary_flag = 1
 
-                image[:, i + batch_size], warp_mat = self.get_imgs(positive_index)
-                oflow[:, i + batch_size] = self.get_oflow(positive_index, warp_mat)
+                # image[:, i + batch_size], warp_mat = self.get_imgs(positive_index)
+                # oflow[:, i + batch_size] = self.get_oflow(positive_index, warp_mat)
 
                 # assign negative
                 negative_index=None
@@ -99,8 +99,13 @@ class Reader(object):
                             negative_index = random.choice(range(int(0.65*bidx + 0.35*eidx), int(0.35*bidx + 0.65*eidx)))
                         break
 
-                image[:, i + batch_size*2], warp_mat = self.get_imgs(negative_index)
-                oflow[:, i + batch_size*2] = self.get_oflow(negative_index, warp_mat)
+                # image[:, i + batch_size*2], warp_mat = self.get_imgs(negative_index)
+                # oflow[:, i + batch_size*2] = self.get_oflow(negative_index, warp_mat)
+
+                tri_index = [chosen_index, positive_index, negative_index]
+                image[:, i::batch_size], warp_mat = self.get_imgs(tri_index)
+                oflow[:, i::batch_size] = self.get_oflow(tri_index, warp_mat)
+
                 tri_indexs.append([chosen_index, positive_index, negative_index])
 
             mean_file = np.array([123, 117, 102], dtype=np.float32)
@@ -118,31 +123,29 @@ class Reader(object):
 
     def get_imgs(self, index):
         # return right hand resized
-        img = np.zeros((2, 101, 101, 3), dtype=np.float32)
-        for k in xrange(len(self.image)):
-            im = self.image[k][index].astype(np.float32)
-            im_resize = cv2.resize(im, (101, 101))
-
-            img[k] = im_resize
+        img = np.zeros((2*3, 101, 101, 3), dtype=np.float32)
+        for k in xrange(2):     # left, right
+            for j in xrange(3): # chose, positive, negative
+                im = self.image[k][index[j]].astype(np.float32)
+                im_resize = cv2.resize(im, (101, 101))
+                img[k * 3 + j] = im_resize
 
         img, mat = im_augmentation(img, self.eig_value, self.eig_vector, trans=0.1, color_dev=0.2, distortion=self.distortion)
-        img = np.transpose(img, (0, 3, 1, 2))  # (2, 3, 101, 101)
-
+        img = np.transpose(img.reshape((2, 3, 101, 101, 3)), (0, 1, 4, 2, 3))  # (2, 3, 3, 101, 101)
         return img, mat
 
 
     def get_oflow(self, index, mat):
         # return optical flow
-        img = np.zeros((2, 101, 101, 2), dtype=np.float32)
-        for k in xrange(len(self.image)):
-            im = self.oflow[k][index].astype(np.float32)
-            im_resize = cv2.resize(im, (101, 101))
-
-            img[k] = im_resize
+        img = np.zeros((2*3, 101, 101, 2), dtype=np.float32)
+        for k in xrange(2):
+            for j in xrange(3):
+                im = self.oflow[k][index[j]].astype(np.float32)
+                im_resize = cv2.resize(im, (101, 101))
+                img[k * 3 + j] = im_resize
 
         img = of_augmentation(img, mat)
-        img = np.transpose(img, (0, 3, 1, 2))  # (2, 2, 101, 101)
-
+        img = np.transpose(img.reshape((2, 3, 101, 101, 2)), (0, 1, 4, 2, 3))  # (2, 3, 2, 101, 101)
         return img
 
 
