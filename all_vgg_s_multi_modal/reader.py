@@ -7,11 +7,11 @@ import random
 import pickle
 import numpy as np
 
-from utils import *
-
 data_dir = '/var/disk1/RWTH2014'
 database_file = os.path.join(data_dir, 'database_2014_combine.pkl')
 data_file = os.path.join(data_dir, 'feat_multimodal.h5')
+sys.path.insert(0, '/home/liuhu/workspace/journal/all_vgg_s_multi_modal')
+from utils_multi import *
 
 class Reader(object):
     def __init__(self, phase, batch_size, c3d_depth=4, depth_stride=4, resample_at_end=False, resample=False, distortion=False, do_shuffle=False):
@@ -104,12 +104,12 @@ class Reader(object):
 
             # gathering features
             for i, ind in enumerate(indices):
-                image_raw, warp_mat = self.get_imgs(range(b_idx[ind], e_idx[ind])) # (x_len, 2, 3, 101, 101)
+                image_raw, warp_mat = self.get_imgs(b_idx[ind], e_idx[ind]) # (x_len, 2, 3, 101, 101)
                 image_aug = interp_images(image_raw, upsamp_indices[i])  # (X_Len, 2, 3, 101, 101)	# interp_images means interp without float
                 assert X_Len[i] == image_aug.shape[0]
                 image[i, :X_Len[i]] = image_aug
 
-                oflow_raw = self.get_oflow(range(b_idx[ind], e_idx[ind]), warp_mat)
+                oflow_raw = self.get_oflow(b_idx[ind], e_idx[ind], warp_mat)
                 oflow_aug = interp_images(oflow_raw, upsamp_indices[i])  # (X_Len, 2, 2, 101, 101)
                 assert X_Len[i] == oflow_aug.shape[0]
                 oflow[i, :X_Len[i]] = oflow_aug
@@ -147,43 +147,52 @@ class Reader(object):
 
         feats[:, 10: ] = diff_locations(feats[:, : 10])
         feats = (feats - self.mean_coord) / self.std_coord
-
         return feats
 
 
-    def get_oflow(self, indexs, mat):
+    def get_oflow(self, begin_index, end_index, mat):
         # return optical flow
-        imgs = np.zeros((len(indexs), 2, 101, 101, 2), dtype=np.float32)
-        for i, index in enumerate(indexs):
-            for k in xrange(2):   # [right, left]
-                img = self.oflow[k][index].astype(np.float32)
-                img_resize = cv2.resize(img, (101, 101))
-                imgs[i, k] = img_resize
+        imgs = np.zeros((end_index-begin_index, 2, 101, 101, 2), dtype=np.float32)
+        imgs_orig = np.zeros((end_index-begin_index, 2, 96, 96, 2), dtype=np.float32)
+        for k in range(2):
+            imgs_orig[:, k] = self.oflow[k][begin_index: end_index].astype(np.float32)
+            for i in range(end_index-begin_index):
+                imgs[i, k] = cv2.resize(imgs_orig[i, k], (101, 101))
+
+        # for i, index in enumerate(indexs):
+        #     for k in xrange(2):   # [right, left]
+        #         img = self.oflow[k][index].astype(np.float32)
+        #         img_resize = cv2.resize(img, (101, 101))
+        #         imgs[i, k] = img_resize
 
         imgs = np.reshape(imgs, (-1, 101, 101, 2))
         imgs = of_augmentation(imgs, mat)
         imgs = np.transpose(np.reshape(imgs, (-1, 2, 101, 101, 2)), (0, 1, 4, 2, 3))  # (len, 2, 2, 101, 101)
-
         return imgs
 
-
-    def get_imgs(self, indexs):
+    def get_imgs(self, begin_index, end_index):
         # same augmentation for one sentence
         # return RGB images
-        imgs = np.zeros((len(indexs), 2, 101, 101, 3), dtype=np.float32)
-        mean_file = np.array([123, 117, 102], dtype=np.float32)
-        for i, index in enumerate(indexs):
-            for k in xrange(len(self.image)):
-                img = self.image[k][index].astype(np.float32)
-                img = img - mean_file[None, None, :]
-                img_resize = cv2.resize(img, (101, 101))
+        imgs = np.zeros((end_index-begin_index, 2, 101, 101, 3), dtype=np.float32)
+        imgs_orig = np.zeros((end_index-begin_index, 2, 96, 96, 3), dtype=np.float32)
 
-                imgs[i, k] = img_resize
+        mean_file = np.array([123, 117, 102], dtype=np.float32)
+        for k in xrange(len(self.image)):
+            imgs_orig[:, k] = self.image[k][begin_index: end_index].astype(np.float32)
+            for i in range(end_index-begin_index):
+                imgs[i, k] = cv2.resize(imgs_orig[i, k] - mean_file[None, None, :], (101, 101))
+
+        # for i, index in enumerate(indexs):
+        #     for k in xrange(len(self.image)):
+        #         img = self.image[k][index].astype(np.float32)
+        #         img = img - mean_file[None, None, :]
+        #         img_resize = cv2.resize(img, (101, 101))
+        #
+        #         imgs[i, k] = img_resize
 
         imgs = np.reshape(imgs, (-1, 101, 101, 3))
         imgs, mat = im_augmentation(imgs, self.eig_value, self.eig_vector, trans=0.1, color_dev=0.2, distortion=self.distortion)
         imgs = np.transpose(np.reshape(imgs, (-1, 2, 101, 101, 3)), (0, 1, 4, 2, 3))
-
         return imgs, mat
 
 
@@ -248,9 +257,9 @@ class Reader(object):
 
 
 if __name__ == '__main__':
-    train_set = Reader(phase='train', batch_size=3, do_shuffle=True, resample=True, distortion=True)
-    for inputs in train_set.iterate():
-        print [s.shape for s in inputs]
+    train_set = Reader(phase='dev', batch_size=1, do_shuffle=False, resample=False, distortion=False)
+    for inputs in train_set.iterate(return_folder=True):
+        glog.info([s.shape for s in inputs[:-1]])
     exit(0)
 
     check_indices = np.array([  30,   32,   55])

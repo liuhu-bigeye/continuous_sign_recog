@@ -7,7 +7,7 @@ import pickle
 import random
 import numpy as np
 
-from utils import *
+from utils_multi import *
 
 data_dir = '/var/disk1/RWTH2014'
 database_file = os.path.join(data_dir, 'database_2014_combine.pkl')

@@ -38,7 +38,7 @@ import caffe
 import sys
 sys.path.insert(0, '/home/liuhu/workspace/journal/try_ctc')
 from m_ctc_cost import ctc_cost, best_right_path_cost, top_k_right_path_cost
-from utils import Softmax
+from utils_multi import Softmax
 
 class Model(object):
     def __init__(self, phase, config, vocabulary_size=1295, hidden_ndim=512):

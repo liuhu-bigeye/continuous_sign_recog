@@ -8,7 +8,7 @@ phase=ctc
 proto=/home/liuhu/tools/caffe/models/vgg_s/VGG_CNN_S_deploy.prototxt
 caffemodel=/home/liuhu/tools/caffe/models/vgg_s/VGG_CNN_S.caffemodel
 
-gpu=0
+gpu=1
 lr=5e-5
 batch_size=2
 disp_iter=200

@@ -9,7 +9,7 @@ np.set_printoptions(precision=4)
 
 import sys
 sys.path.insert(0, '/home/liuhu/workspace/journal')
-from utils import mkdir_safe, log_self
+from utils_multi import mkdir_safe, log_self
 
 from loader_config import Config
 from evaluate.eval_utils import convert_pred_to_hypo, evaluate
@@ -49,7 +49,7 @@ def valid(model, valid_set, config, epoch):
         valid_return = model.valid_func(*valid_inputs[:-1])
         losses = np.vstack((losses, valid_return[:-1])) if losses.shape != (0,) else np.array(valid_return[:-1])
 
-        h_len = np.sum(valid_inputs[1], axis=1)
+        h_len = np.sum(valid_inputs[3], axis=1)
         hypo = convert_pred_to_hypo(valid_return[-1], h_len)
         hypos.extend(hypo)
         IDs.extend(valid_inputs[-1])
