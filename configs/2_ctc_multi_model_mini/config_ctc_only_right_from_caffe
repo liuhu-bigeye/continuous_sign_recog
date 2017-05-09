@@ -8,7 +8,7 @@ phase=ctc
 proto=/home/liuhu/tools/caffe/models/vgg_s/VGG_CNN_S_deploy.prototxt
 caffemodel=/home/liuhu/tools/caffe/models/vgg_s/VGG_CNN_S.caffemodel
 
-gpu=4
+gpu=7
 lr=5e-5
 batch_size=2
 disp_iter=200
@@ -21,3 +21,4 @@ prefix=ctc_multi_model_from_caffe
 ----
 This is a origin ctc multi-model model
 Finetuned from caffemodel
+Only right hand, for debug

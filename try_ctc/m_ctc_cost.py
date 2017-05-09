@@ -17,6 +17,12 @@ sys.path.insert(0, '/home/liuhu/workspace/journal')
 from utils import softmax_np
 # sys.path.insert(0, '/home/liuhu/tools/rnn_ctc/nnet')
 
+def m_eye(length, k=0):
+    if k == 0:
+        return T.eye(length)
+    else:
+        return T.concatenate([T.concatenate([T.zeros((length-k, k), dtype=floatX), T.eye(length-k)], axis=1), T.zeros((k, length), dtype=floatX)], axis=0)
+
 def ctc_cost(pred, pred_len, token, blank=0):
     '''
     ctc_cost of multi sentences
@@ -28,6 +34,7 @@ def ctc_cost(pred, pred_len, token, blank=0):
     '''
 
     eps = theano.shared(np.float32(1e-35))
+    Time = pred.shape[0]
     nb, U = token.shape[0], token.shape[1]
     token_len = T.sum(T.neq(token, -1), axis=-1)
 
@@ -38,11 +45,11 @@ def ctc_cost(pred, pred_len, token, blank=0):
     length = token_with_blank.shape[1]
 
     # only use these predictions
-    pred = pred[:, T.tile(T.arange(nb), (length, 1)).T, token_with_blank]    # (T, nb, 2U+1)
+    pred = pred[T.arange(Time)[:, None, None], T.arange(nb)[None, :, None], token_with_blank[None, :, :]]    # (T, nb, 2U+1)
 
     # recurrence relation
     sec_diag = T.concatenate((T.zeros((nb, 2), dtype=intX), T.neq(token_with_blank[:, :-2], token_with_blank[:, 2:])), axis=1) * T.neq(token_with_blank, blank)    # (nb, 2U+1)
-    recurrence_relation = T.tile((T.eye(length) + T.eye(length, k=1)), (nb, 1, 1)) + T.tile(T.eye(length, k=2), (nb, 1, 1))*sec_diag[:, None, :]    # (nb, 2U+1, 2U+1)
+    recurrence_relation = T.tile((m_eye(length) + m_eye(length, k=1)), (nb, 1, 1)) + T.tile(m_eye(length, k=2), (nb, 1, 1))*sec_diag[:, None, :]    # (nb, 2U+1, 2U+1)
     recurrence_relation = recurrence_relation.astype(floatX)
 
     # alpha
@@ -51,15 +58,16 @@ def ctc_cost(pred, pred_len, token, blank=0):
 
     # dynamic programming
     # (T, nb, 2U+1)
-    probability, _ = theano.scan(lambda curr, accum: T.batched_dot(accum, recurrence_relation) * curr, sequences=[pred[1:]], outputs_info=[alpha])
+    probability, _ = theano.scan(lambda curr, accum: T.sum(accum[:, :, None] * recurrence_relation, axis=1) * curr, sequences=[pred[1:]], outputs_info=[alpha])
+    # T.batched_dot(accum[:, None, :], recurrence_relation)[:, 0] * curr,
 
     labels_2 = probability[pred_len-2, T.arange(nb), 2*token_len-1]
     labels_1 = probability[pred_len-2, T.arange(nb), 2*token_len]
     labels_prob = labels_2 + labels_1
 
-
     cost = -T.log(labels_prob+eps)
     return cost
+    # return token_with_blank, pred, sec_diag, recurrence_relation, alpha, probability, cost
 
 def best_right_path_cost(pred, mask, token, blank=0):
     '''
@@ -94,7 +102,7 @@ def best_right_path_cost(pred, mask, token, blank=0):
 
     # recurrence relation
     sec_diag = T.concatenate((T.zeros((nb, 2), dtype=intX), T.neq(token_with_blank[:, :-2], token_with_blank[:, 2:])), axis=1) * T.neq(token_with_blank, blank)    # (nb, 2U+1)
-    recurrence_relation = T.tile((T.eye(length) + T.eye(length, k=1)), (nb, 1, 1)) + T.tile(T.eye(length, k=2), (nb, 1, 1))*sec_diag[:, None, :]    # (nb, 2U+1, 2U+1)
+    recurrence_relation = T.tile((m_eye(length) + m_eye(length, k=1)), (nb, 1, 1)) + T.tile(m_eye(length, k=2), (nb, 1, 1))*sec_diag[:, None, :]    # (nb, 2U+1, 2U+1)
     recurrence_relation = -T.log(recurrence_relation + eps).astype(floatX)
 
     # alpha
@@ -161,7 +169,7 @@ def top_k_right_path_cost(pred, mask, token, k, blank=0):
 
     # recurrence relation
     sec_diag = T.concatenate((T.zeros((nb, 2), dtype=intX), T.neq(token_with_blank[:, :-2], token_with_blank[:, 2:])), axis=1) * T.neq(token_with_blank, blank)    # (nb, 2U+1)
-    recurrence_relation = T.tile((T.eye(length) + T.eye(length, k=1)), (nb, 1, 1)) + T.tile(T.eye(length, k=2), (nb, 1, 1))*sec_diag[:, None, :]    # (nb, 2U+1, 2U+1)
+    recurrence_relation = T.tile((m_eye(length) + m_eye(length, k=1)), (nb, 1, 1)) + T.tile(m_eye(length, k=2), (nb, 1, 1))*sec_diag[:, None, :]    # (nb, 2U+1, 2U+1)
     recurrence_relation = -T.log(recurrence_relation + eps).astype(floatX)
 
     # alpha
@@ -230,6 +238,26 @@ def greedy_cost(pred, mask):
     greedy_cost = log_greedy_pred.sum(axis=0)
     return greedy_cost
 
+if __name__ == '__main__':
+    pred = T.tensor3('pred')
+    length = T.ivector('length')
+    token = T.imatrix('token')
+
+    token_with_blank_th, pred_th, sec_diag_th, recurrence_relation_th, alpha_th, probability_th, cost_th = ctc_cost(pred, length, token, blank=0)
+    f_ctc_loss = theano.function([pred, length, token], [token_with_blank_th, pred_th, sec_diag_th, recurrence_relation_th, alpha_th, probability_th, cost_th], on_unused_input='warn')
+
+    # (T, nb, voca_size+1)
+    pred_np = np.array([[0.5, 0.4, 0.1],[0.3,0.1,0.6],[0.7,0.2,0.1],[0.3,0.5,0.2]]).astype(floatX)[:,None,:]
+    # (nb)
+    length_np = np.array([4]).astype(intX)
+    # (nb, U)
+    token_np = np.array([2,1]).astype(intX)[None,:]
+
+    token_with_blank_np, pred_np, sec_diag_np, recurrence_relation_np, alpha_np, probability_np, cost_np = f_ctc_loss(pred_np, length_np, token_np)
+    pdb.set_trace()
+    # glog.info('%s, %s, %s'%(pred_np.shape, length_np.shape, token_np.shape))
+    # glog.info(f_ctc_loss(pred_np, length_np, token_np))
+
 # def generate_data(T, nb, length_max, voca_size):
 #     # generate preds(nb, T, voca_size), tokens(no 0, -1 for null), lengths(length for preds)
 
@@ -288,32 +316,32 @@ def greedy_cost(pred, mask):
 #     pdb.set_trace()
 
 # top_k path from prediction
-if __name__ == '__main__':
-    pred = T.tensor3('pred')
-    mask = T.matrix('mask')
-    token = T.imatrix('token')
-
-    cost, argmin_token, log_probability, argmin_pos_k, min_full_path = top_k_right_path_cost(pred, mask, token, k=15, blank=0)
-    f_topk_loss = theano.function([pred, mask, token], [cost, argmin_token, log_probability, argmin_pos_k, min_full_path])
-
-    df = h5py.File('/home/liuhu/workspace/journal/all_vgg_s/output/ctc_predict_top_k_2017-04-05_20-02-09/ctc_best_path_63_0.412_0.411_top_10.h5')
-    # length = int(sum(df['mask'][0]))
-    import pickle
-    with open('/var/disk1/RWTH2014/database_2014_combine.pkl') as f:
-        db = pickle.load(f)
-
-    # (T, nb, voca_size+1)
-    pred_np = softmax_np(df['output_lin'][:4].astype(floatX)).transpose([1, 0, 2])
-    # (nb)
-    mask_np = df['mask'][:4].astype(floatX)
-    # (nb, U)
-    token_np = np.vstack([np.concatenate([db['train']['token'][i], np.ones((12-len(db['train']['token'][i])))*-2]) for i in range(4)]).astype(intX) + 1
-
-    # glog.info('cost_gt: %f'%( -np.log(0.105)))
-    cost_np, argmin_token_np, log_probability_np, argmin_pos_k_np, min_full_path_np = f_topk_loss(pred_np, mask_np, token_np)
-    print cost_np
-    print argmin_token_np
-    pdb.set_trace()
+# if __name__ == '__main__':
+#     pred = T.tensor3('pred')
+#     mask = T.matrix('mask')
+#     token = T.imatrix('token')
+#
+#     cost, argmin_token, log_probability, argmin_pos_k, min_full_path = top_k_right_path_cost(pred, mask, token, k=15, blank=0)
+#     f_topk_loss = theano.function([pred, mask, token], [cost, argmin_token, log_probability, argmin_pos_k, min_full_path])
+#
+#     df = h5py.File('/home/liuhu/workspace/journal/all_vgg_s/output/ctc_predict_top_k_2017-04-05_20-02-09/ctc_best_path_63_0.412_0.411_top_10.h5')
+#     # length = int(sum(df['mask'][0]))
+#     import pickle
+#     with open('/var/disk1/RWTH2014/database_2014_combine.pkl') as f:
+#         db = pickle.load(f)
+#
+#     # (T, nb, voca_size+1)
+#     pred_np = softmax_np(df['output_lin'][:4].astype(floatX)).transpose([1, 0, 2])
+#     # (nb)
+#     mask_np = df['mask'][:4].astype(floatX)
+#     # (nb, U)
+#     token_np = np.vstack([np.concatenate([db['train']['token'][i], np.ones((12-len(db['train']['token'][i])))*-2]) for i in range(4)]).astype(intX) + 1
+#
+#     # glog.info('cost_gt: %f'%( -np.log(0.105)))
+#     cost_np, argmin_token_np, log_probability_np, argmin_pos_k_np, min_full_path_np = f_topk_loss(pred_np, mask_np, token_np)
+#     print cost_np
+#     print argmin_token_np
+#     pdb.set_trace()
 
 
 # if __name__ == '__main__':

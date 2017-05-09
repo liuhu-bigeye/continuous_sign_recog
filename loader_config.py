@@ -7,8 +7,8 @@ class Config(object):
 		self.config_file = config_file
 		self.items = {}
 		self.load_config()
-		if 'gpu' in self.items.keys() and self.items['gpu'] in range(4):
-			os.environ['THEANO_FLAGS'] = 'device=gpu%d'%self.items['gpu']
+		if 'gpu' in self.items.keys() and self.items['gpu'] in range(8):
+			os.environ['THEANO_FLAGS'] = 'device=cuda%d'%self.items['gpu']
 
 	def load_config(self):
 		with open(self.config_file) as f:

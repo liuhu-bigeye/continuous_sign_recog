@@ -1,5 +1,6 @@
 import os
 import cv2
+import pdb
 import sys
 import glog
 import h5py
@@ -30,8 +31,8 @@ class Reader(object):
         h = h5py.File(data_file)
 
         self.image = [h['right_images'], h['left_images']]
-        self.oflow = [h['right_of'], h['left_of']]
-        self.coord = [h['right_coord'], h['left_coord'], h['head_coord']]
+        # self.oflow = [h['right_of'], h['left_of']]
+        # self.coord = [h['right_coord'], h['left_coord'], h['head_coord']]
 
         self.batch_size = batch_size
 
@@ -42,10 +43,10 @@ class Reader(object):
         px -= px.mean(axis=0)
         self.eig_value, self.eig_vector = np.linalg.eig(np.cov(px.T))
 
-        with open('/home/trunk/disk1/database-rwth-2014/phoenix2014-release/coord.pkl') as f:
-            d = pickle.load(f)
-            self.mean_coord = np.array(d['coord_mean'], dtype=np.float32)
-            self.std_coord = np.array(d['coord_std'], dtype=np.float32)
+        # with open('/home/trunk/disk1/database-rwth-2014/phoenix2014-release/coord.pkl') as f:
+        #     d = pickle.load(f)
+        #     self.mean_coord = np.array(d['coord_mean'], dtype=np.float32)
+        #     self.std_coord = np.array(d['coord_std'], dtype=np.float32)
 
         self.resample_at_end = resample_at_end
         self.resample = resample
@@ -98,8 +99,8 @@ class Reader(object):
             max_X_Len = np.max(X_Len)
 
             image = np.zeros((batch_size, max_X_Len, 2, 3, 101, 101), dtype=np.float32)
-            oflow = np.zeros((batch_size, max_X_Len, 2, 2, 101, 101), dtype=np.float32)
-            coord = np.zeros((batch_size, 20, max_X_Len), dtype=np.float32)
+            # oflow = np.zeros((batch_size, max_X_Len, 2, 2, 101, 101), dtype=np.float32)
+            # coord = np.zeros((batch_size, 20, max_X_Len), dtype=np.float32)
             mask = [np.concatenate((np.ones(l), np.zeros(max_h_len - l))) for l in h_len]
 
             # gathering features
@@ -109,25 +110,26 @@ class Reader(object):
                 assert X_Len[i] == image_aug.shape[0]
                 image[i, :X_Len[i]] = image_aug
 
-                oflow_raw = self.get_oflow(b_idx[ind], e_idx[ind], warp_mat)
-                oflow_aug = interp_images(oflow_raw, upsamp_indices[i])  # (X_Len, 2, 2, 101, 101)
-                assert X_Len[i] == oflow_aug.shape[0]
-                oflow[i, :X_Len[i]] = oflow_aug
+                # oflow_raw = self.get_oflow(b_idx[ind], e_idx[ind], warp_mat)
+                # oflow_aug = interp_images(oflow_raw, upsamp_indices[i])  # (X_Len, 2, 2, 101, 101)
+                # assert X_Len[i] == oflow_aug.shape[0]
+                # oflow[i, :X_Len[i]] = oflow_aug
 
-                coord_raw = self.get_coord(range(b_idx[ind], e_idx[ind]))   # have problem due to position augmentation
-                coord_aug = interp_images(coord_raw, upsamp_indices[i])  # (X_Len, 20)
-                coord[i, :, :X_Len[i]] = coord_aug.transpose([1, 0])
+                # coord_raw = self.get_coord(range(b_idx[ind], e_idx[ind]))   # have problem due to position augmentation
+                # coord_aug = interp_images(coord_raw, upsamp_indices[i])  # (X_Len, 20)
+                # coord[i, :, :X_Len[i]] = coord_aug.transpose([1, 0])
 
 
             image = np.transpose(image, (2, 0, 1, 3, 4, 5))  # (2, batch_size, max_X_Len, 3, 101, 101)
-            oflow = np.transpose(oflow, (2, 0, 1, 3, 4, 5))  # (2, batch_size, max_X_Len, 2, 101, 101)
+            # oflow = np.transpose(oflow, (2, 0, 1, 3, 4, 5))  # (2, batch_size, max_X_Len, 2, 101, 101)
 
             image = np.reshape(np.float32(image), (-1, 3, 101, 101))  # (2 * batch_size * X_len, 3, 101, 101)
-            oflow = np.reshape(np.float32(oflow), (-1, 2, 101, 101)) / 20. * 128.  # (2 * batch_size * X_len, 2, 101, 101)
-            coord = np.float32(coord)
+            # oflow = np.reshape(np.float32(oflow), (-1, 2, 101, 101)) / 20. * 128.  # (2 * batch_size * X_len, 2, 101, 101)
+            # coord = np.float32(coord)
             mask = np.array(mask, dtype=np.float32)  # (batch_size, max_h_len)
 
-            yields = [image, oflow, coord, mask, token]
+            # yields = [image, oflow, coord, mask, token]
+            yields = [image, mask, token]
             if return_folder:
                 yields += [ID]
             if return_upsamp_indices:
@@ -258,9 +260,30 @@ class Reader(object):
 
 if __name__ == '__main__':
     train_set = Reader(phase='dev', batch_size=1, do_shuffle=False, resample=False, distortion=False)
-    for inputs in train_set.iterate(return_folder=True):
-        glog.info([s.shape for s in inputs[:-1]])
-    exit(0)
+
+    import skimage.io as sio
+    from skimage.transform import resize
+
+    for image, mask, token in train_set.iterate():
+        batch_size = mask.shape[0]
+        image = np.transpose(np.reshape(image, (2, batch_size, -1, 3, 101, 101)), (1, 2, 0, 4, 5, 3))
+        # (batch_size, len, 2, 101, 101, 3)
+        pdb.set_trace()
+
+        for idx in range(batch_size):
+            img = image[idx] + np.array([123, 117, 102], dtype=np.float32)[None, None, None, None, :]
+            out = np.zeros((101 * 2, 101 * img.shape[0], 3), dtype=np.float32)
+
+            img[img > 255.] = 255.
+            img[img < 0.] = 0.
+
+            for i in range(img.shape[0]):
+                for j in range(2):
+                    im = img[i, j] / 255.
+                    out[j * 101: (j + 1) * 101, i * 101: (i + 1) * 101, :] = im
+
+            sio.imsave('reader.jpg', out)
+            exit(0)
 
     check_indices = np.array([  30,   32,   55])
 

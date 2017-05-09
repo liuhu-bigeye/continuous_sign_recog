@@ -6,12 +6,12 @@ import commands
 import tempfile
 
 # SCLITE_PATH = '/home/trunk/disk1/database-rwth-2014/phoenix2014-release/evaluation/sctk-2.4.0/bin'
-SCLITE_PATH = '/home/liuhu/tools/kaldi/tools/sctk-2.4.10/bin'
+SCLITE_PATH = '/home/liuhu/tools/kaldi_sctk/bin'
 
 def evaluate(hypotheses, vocabulary, path, epoch, phase='test'):
     path = '_'.join([path, phase])
 
-    gt_file = '/home/runpeng/workspace/C3D_CTC/evaluate/phoenix2014-groundtruth-%s.stm' % phase
+    gt_file = '/home/liuhu/workspace/journal/evaluate/phoenix2014-groundtruth-%s.stm' % phase
     hypo_file = os.path.join(path, 'epoch_%03d.ctm' % epoch)
 
     # save temporary ctm file
@@ -24,7 +24,7 @@ def evaluate(hypotheses, vocabulary, path, epoch, phase='test'):
     temp2_ctm = os.path.join(path, 'temp2.ctm')
     temp_stm = os.path.join(path, 'temp.stm')
 
-    cmd = '/home/runpeng/workspace/C3D_CTC/evaluate/refine_ctm.sh %s %s %s' % (temp_save, temp_ctm, temp2_ctm)
+    cmd = '/home/liuhu/workspace/journal/evaluate/refine_ctm.sh %s %s %s' % (temp_save, temp_ctm, temp2_ctm)
     os.system(cmd)
     # cmd = """cat %s | sed -e 's,loc-,,g' -e 's,cl-,,g' -e 's,qu-,,g' -e 's,poss-,,g' -e 's,lh-,,g' -e 's,S0NNE,SONNE,g' -e 's,HABEN2,HABEN,g'|sed -e 's,__EMOTION__,,g' -e 's,__PU__,,g'  -e 's,__LEFTHAND__,,g' |sed -e 's,WIE AUSSEHEN,WIE-AUSSEHEN,g' -e 's,ZEIGEN ,ZEIGEN-BILDSCHIRM ,g' -e 's,ZEIGEN$,ZEIGEN-BILDSCHIRM,' -e 's,^\([A-Z]\) \([A-Z][+ ]\),\1+\2,g' -e 's,[ +]\([A-Z]\) \([A-Z]\) , \1+\2 ,g'| sed -e 's,\([ +][A-Z]\) \([A-Z][ +]\),\1+\2,g'|sed -e 's,\([ +][A-Z]\) \([A-Z][ +]\),\1+\2,g'|  sed -e 's,\([ +][A-Z]\) \([A-Z][ +]\),\1+\2,g'|sed -e 's,\([ +]SCH\) \([A-Z][ +]\),\1+\2,g'|sed -e 's,\([ +]NN\) \([A-Z][ +]\),\1+\2,g'| sed -e 's,\([ +][A-Z]\) \(NN[ +]\),\1+\2,g'| sed -e 's,\([ +][A-Z]\) \([A-Z]\)$,\1+\2,g'|  sed -e 's,\([A-Z][A-Z]\)RAUM,\1,g'| sed -e 's,-PLUSPLUS,,g' | perl -ne 's,(?<![\w-])(\b[A-Z]+(?![\w-])) \1(?![\w-]),\1,g;print;'| perl -ne 's,(?<![\w-])(\b[A-Z]+(?![\w-])) \1(?![\w-]),\1,g;print;'| perl -ne 's,(?<![\w-])(\b[A-Z]+(?![\w-])) \1(?![\w-]),\1,g;print;'| perl -ne 's,(?<![\w-])(\b[A-Z]+(?![\w-])) \1(?![\w-]),\1,g;print;'| grep -v "__LEFTHAND__" | grep -v "__EPENTHESIS__" | grep -v "__EMOTION__" > %s""" % (temp_save, temp_ctm)
     # os.system(cmd)
@@ -123,7 +123,6 @@ def convert_pred_to_hypo(prediction, h_len=None):
         hypo.append(h)
 
     return hypo
-
 
 def generate_ctm_file(hypotheses, vocabulary, ctm_file):
     with open(ctm_file, 'w') as f:
