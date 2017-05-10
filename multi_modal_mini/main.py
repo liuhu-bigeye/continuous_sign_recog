@@ -68,8 +68,8 @@ def train_valid(model, train_set, valid_set, test_set, config):
 
     for epoch in range(config.items['starting'], config.items['max_epoch']):
         # valid and test
-        WER_valid = 1#valid(model, valid_set, config, epoch)
-        WER_test = 1#valid(model, test_set, config, epoch)
+        WER_valid = valid(model, valid_set, config, epoch)
+        WER_test = valid(model, test_set, config, epoch)
 
         # dealing with patience
         if WER_valid < min_wer[0]:

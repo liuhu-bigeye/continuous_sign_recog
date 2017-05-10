@@ -1,0 +1,22 @@
+# configs startswith '='
+# no '' for string
+# readme begin after ----
+# log will be saved if only with more than 5 Iterations
+
+phase=ctc
+model=/home/liuhu/workspace/journal/multi_modal_mini/output/ctc_triplet_lr_2017-05-09_11-04-43/snapshot/ctc_multi_lr_from_triplet_epoch_0010
+
+gpu=4
+lr=5e-5
+batch_size=2
+disp_iter=200
+patience=10
+max_epoch=100
+
+snap_path=DIR/snapshot
+prefix=ctc_multi_lr_from_triplet_continue
+
+----
+This is a lr ctc multi-model model
+Finetuned from triplet pretrained model
+Continue from epoch 10, train, dev and test

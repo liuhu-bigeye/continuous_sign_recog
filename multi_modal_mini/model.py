@@ -119,8 +119,8 @@ class Model(object):
         net['lstm_bck_fusion'] = LSTMLayer(incoming=net['lstm_input_fusion'], mask_input=net['mask'], forgetgate=Gate(b=lasagne.init.Constant(1.0)), num_units=hidden_ndim, backwards=True)
         net['lstm_shp_fusion'] = ReshapeLayer(ConcatLayer((net['lstm_frw_fusion'], net['lstm_bck_fusion']), axis=2), shape=(-1, 2 * hidden_ndim))   # (nb*max_hlen, 2*hidden_ndim)
 
-        # net['lstm_shp'] = ConcatLayer([net['lstm_shp_right'], net['lstm_shp_fusion']], axis=1)
-        net['lstm_shp'] = net['lstm_shp_right']
+        net['lstm_shp'] = ConcatLayer([net['lstm_shp_right'], net['lstm_shp_fusion']], axis=1)
+        # net['lstm_shp'] = net['lstm_shp_right']
 
         net['out'] = DenseLayer(net['lstm_shp'], self.nClasses, nonlinearity=identity)  # (nb*max_hlen, nClasses)
         net['out_lin'] = ReshapeLayer(net['out'], shape=(self.nb, -1, self.nClasses))
