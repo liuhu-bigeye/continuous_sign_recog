@@ -7,7 +7,7 @@ phase=ctc
 model_feat=/home/liuhu/workspace/journal/models/triplet_feat_right_132.model
 
 gpu=4
-lr=5e-5
+lr=5e-4
 batch_size=2
 disp_iter=200
 patience=10

@@ -71,7 +71,6 @@ class Model(object):
         net['image'] = InputLayer(shape=(None, 3, size, size))  # (2*nb*len, 3, 101, 101)
 
         # both hand
-        net['image'] = ExpressionLayer(net['image'], lambda x: x[:x.shape[0]/2], output_shape='auto')
         net['conv1'] = Conv2DLayer(incoming=net['image'], num_filters=96, filter_size=7, stride=2)
         net['norm1'] = LocalResponseNormalization2DLayer(incoming=net['conv1'])
         net['pool1'] = MaxPool2DLayer(incoming=net['norm1'], pool_size=3)
@@ -84,12 +83,12 @@ class Model(object):
         net['conv5'] = Conv2DLayer(incoming=net['conv4'], num_filters=512, filter_size=3, pad=1)
 
         # modal fusion
-        net['pool5'] = MaxPool2DLayer(incoming=net['conv5'], pool_size=3)   # (nb*len, 512, 2, 2)
-        net['fc6'] = DenseLayer(incoming=net['pool5'], num_units=1024)      # (nb*len, 1024) or (nb*3, 1024)
+        net['pool5'] = MaxPool2DLayer(incoming=net['conv5'], pool_size=3)   # (2nb*len, 512, 2, 2)
+        net['fc6'] = DenseLayer(incoming=net['pool5'], num_units=1024)      # (2nb*len, 1024) or (nb*3, 1024)
 
         # dropout should be shared among timestep, or triplets
-        net['pre_drop6'] = ReshapeLayer(incoming=net['fc6'], shape=(2*self.nb, -1, 1024))
-        net['drop6'] = DropoutLayer(incoming=net['pre_drop6'], p=0.2, shared_axes=(1,))
+        net['drop6'] = ReshapeLayer(incoming=net['fc6'], shape=(2*self.nb, -1, 1024))
+        # net['drop6'] = DropoutLayer(incoming=net['pre_drop6'], p=0.2, shared_axes=(1,))
         net['fc7'] = DenseLayer(ReshapeLayer(net['drop6'], shape=(-1, 1024)), num_units=256, nonlinearity=identity)  # (3*nb, 256)
 
         # encoding network for image features
@@ -97,11 +96,11 @@ class Model(object):
         net['pre_conv1d'] = DimshuffleLayer(net['drop6'], (0, 2, 1))    # (nb, 1024, max_xlen)
         net['conv1d_1'] = Conv1DLayer(net['pre_conv1d'], num_filters=1024, filter_size=3, pad='same')
         net['pool1d_1'] = MaxPool1DLayer(net['conv1d_1'], pool_size=2)    #(nb, 1024, max_xlen/2)
-        net['drop1d_1'] = DropoutLayer(net['pool1d_1'], p=0.2, shared_axes=(2,))
+        net['drop1d_1'] = DropoutLayer(net['pool1d_1'], p=0.1, shared_axes=(2,))
 
         net['conv1d_2'] = Conv1DLayer(net['drop1d_1'], num_filters=1024, filter_size=3, pad='same')
         net['pool1d_2'] = MaxPool1DLayer(net['conv1d_2'], pool_size=2)    #(nb, 1024, max_hlen)
-        net['drop1d_2'] = DropoutLayer(net['pool1d_2'], p=0.2, shared_axes=(2,))
+        net['drop1d_2'] = DropoutLayer(net['pool1d_2'], p=0.1, shared_axes=(2,))
 
         # LSTM, input shape=(nb, max_hlen, 1024)
         # two LSTM, one for fusion, one for right hand
@@ -209,7 +208,6 @@ class Model(object):
             self.predict_func = theano.function(inputs=[data, mask, token], outputs=[output_lin, top_k_path_loss, top_k_path, ctc_loss])
 
         glog.info('Model built, phase = %s'%phase)
-
 
     def make_functions(self):
         self.train_func = theano.function(inputs=self.inputs, outputs=self.train_outputs, updates=self.updates)

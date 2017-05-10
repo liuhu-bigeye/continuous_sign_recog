@@ -181,6 +181,8 @@ class Reader(object):
         mean_file = np.array([123, 117, 102], dtype=np.float32)
         for k in xrange(len(self.image)):
             imgs_orig[:, k] = self.image[k][begin_index: end_index].astype(np.float32)
+            if k == 1:
+                imgs_orig[:, k] = imgs_orig[:, k, :, ::-1, :]
             for i in range(end_index-begin_index):
                 imgs[i, k] = cv2.resize(imgs_orig[i, k] - mean_file[None, None, :], (101, 101))
 
@@ -268,7 +270,6 @@ if __name__ == '__main__':
         batch_size = mask.shape[0]
         image = np.transpose(np.reshape(image, (2, batch_size, -1, 3, 101, 101)), (1, 2, 0, 4, 5, 3))
         # (batch_size, len, 2, 101, 101, 3)
-        pdb.set_trace()
 
         for idx in range(batch_size):
             img = image[idx] + np.array([123, 117, 102], dtype=np.float32)[None, None, None, None, :]
