@@ -24,7 +24,7 @@ def resampling(lengths, depth, stride, temp_scaling=0.2, max_len = 320):
     indices = []
     samp_lengths = []
     min_len = 32
-    # max_len = 230
+    max_len = 250
 
     L = 1.0 - temp_scaling
     U = 1.0 + temp_scaling

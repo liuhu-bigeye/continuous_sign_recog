@@ -11,6 +11,7 @@ from lasagne.nonlinearities import *
 # import caffe
 
 from try_ctc.m_ctc_cost import ctc_cost, best_right_path_cost, top_k_right_path_cost
+from try_ctc.ctc_equidistant_cost import ctc_equidistant_cost
 from utils import Softmax
 
 class Model(object):
@@ -199,7 +200,11 @@ class Model(object):
         pred = T.argmax(output_softmax, axis=2)
 
         output_trans = T.transpose(output_softmax, (1, 0, 2))  # (max_hlen, nb, nClasses)
-        ctc_loss = ctc_cost(output_trans, T.sum(mask, axis=1, dtype='int32'), token).mean()
+
+        if 'equidistant_rate' in self.config.items.keys():
+            ctc_loss = ctc_equidistant_cost(output_trans, T.sum(mask, axis=1, dtype='int32'), token, max_dist=self.config.items['equidistant_rate']).mean()
+        else:
+            ctc_loss = ctc_cost(output_trans, T.sum(mask, axis=1, dtype='int32'), token).mean()
 
         return ctc_loss, pred
 
