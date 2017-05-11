@@ -5,6 +5,7 @@
 
 phase=ctc
 model_feat=/home/liuhu/workspace/fight_4_cvpr/all_vgg_s/snapshot_feat/best_epochs/132
+equidistant_rate=2.0
 
 gpu=1
 lr=5e-5

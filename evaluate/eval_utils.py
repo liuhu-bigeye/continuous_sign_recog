@@ -5,8 +5,8 @@ import re
 import commands
 import tempfile
 
-# SCLITE_PATH = '/home/trunk/disk1/database-rwth-2014/phoenix2014-release/evaluation/sctk-2.4.0/bin'
-SCLITE_PATH = '/home/liuhu/tools/kaldi_sctk/bin'
+SCLITE_PATH = '/home/trunk/disk1/database-rwth-2014/phoenix2014-release/evaluation/sctk-2.4.0/bin'
+# SCLITE_PATH = '/home/liuhu/tools/kaldi_sctk/bin'
 
 def evaluate(hypotheses, vocabulary, path, epoch, phase='test'):
     path = '_'.join([path, phase])
