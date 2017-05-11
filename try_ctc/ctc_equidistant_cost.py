@@ -31,7 +31,6 @@ def ctc_equidistant_cost(pred, pred_len, token, max_dist=2.0, blank=0):
     Time, nb, _ = pred.shape
     U = token.shape[1]
     token_len = T.sum(T.neq(token, -1), axis=-1)    # (nb,)
-
     max_dist = T.round(max_dist * pred_len / token_len).astype(intX) # (nb)
 
     # token_with_blank
@@ -58,7 +57,7 @@ def ctc_equidistant_cost(pred, pred_len, token, max_dist=2.0, blank=0):
     # 1. error for last step, maybe equidistant for last real step is better
     # 2. minor error for seqs equal steps, max dist += 1
     def step_func(p_t, t, alpha, beta):
-        beta = T.dot(beta, recurrence_relation) * p_t[:, :, None, :]
+        beta = T.dot(beta, recurrence_relation) * T.tile(p_t[:, :, None, :], (1, 1, Time, 1))
         beta = T.set_subtensor(beta[:, :, t, :2], p_t[:, :, :2])
 
         # last step might output token_last or blank
@@ -68,11 +67,13 @@ def ctc_equidistant_cost(pred, pred_len, token, max_dist=2.0, blank=0):
         # might be error when consequence same tokens(fixed)
         alpha_trans = T.set_subtensor(alpha[seqs_equals[0], seqs_equals[1], :], T.dot(alpha[seqs_equals[0], seqs_equals[1], :], seqs_relation) * seqs_prob_mult)
 
-        # (nb, U)
+        # (nb, Time - 1)
         begin_index = T.maximum(0, t - max_dist)    # (nb,)
         begin_mask, _ = theano.scan(lambda x: T.concatenate([T.zeros((x,), dtype=floatX), T.ones((Time-1-x,), dtype=floatX)]), sequences=[begin_index])
+        begin_mask = T.tile(begin_mask[:, None, :], (1, U-1, 1))
 
-        alpha_t = T.concatenate([beta[:, 0, 0, 1][:, None], (alpha_trans[:, :-1, :-1] * beta[:, 1:, 1:, 1] * begin_mask[:, None, :]).sum(axis=2)], axis=1)
+        # (nb, U)
+        alpha_t = T.concatenate([beta[:, 0, 0, 1][:, None], (alpha_trans[:, :-1, :-1] * beta[:, 1:, 1:, 1] * begin_mask).sum(axis=2)], axis=1)
         alpha = T.set_subtensor(alpha[:, :, t], alpha_t)
         return alpha, beta
 
@@ -88,10 +89,10 @@ if __name__ == '__main__':
 
     # token_th, token_with_blank_th, pred_th, recurrence_relation_th, alphas_th, betas_th, labels_prob_th, 
     cost_equi_th = ctc_equidistant_cost(pred, length, token, max_dist=1.0)
-    f_ctc_equi_loss = theano.function([pred, length, token], [cost_equi_th])
+    f_ctc_equi_loss = theano.function([pred, length, token], [cost_equi_th, T.grad(cost_equi_th.mean(), pred)])
 
     cost_th = ctc_cost(pred, length, token)
-    f_ctc_loss = theano.function([pred, length, token], [cost_th])
+    f_ctc_loss = theano.function([pred, length, token], [cost_th, T.grad(cost_th.mean(), pred)])
     # token_th, token_with_blank_th, pred_th, recurrence_relation_th, alphas_th, betas_th, labels_prob_th])
 
     # (T, nb, voca_size+1)
@@ -101,6 +102,6 @@ if __name__ == '__main__':
     # (nb, U)
     token_np = np.array([1,2]).astype(intX)[None,:]
 
-    # token_np_out, token_with_blank_np, pred_np_out, recurrence_relation_np, alphas_np, betas_np, labels_prob_np, 
-    print f_ctc_equi_loss(pred_np, length_np, token_np)
+    # token_np_out, token_with_blank_np, pred_np_out, recurrence_relation_np, alphas_np, betas_np, labels_prob_np,
     print f_ctc_loss(pred_np, length_np, token_np)
+    print f_ctc_equi_loss(pred_np, length_np, token_np)

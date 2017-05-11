@@ -171,9 +171,9 @@ class Model(object):
 
 
     def make_functions(self):
-        # for param, update in self.updates.items():
-        #     if param.broadcastable != update.broadcastable:
-        #         self.updates[param] = T.patternbroadcast(update, param.broadcastable)
+        for param, update in self.updates.items():
+            if param.broadcastable != update.broadcastable:
+                self.updates[param] = T.patternbroadcast(update, param.broadcastable)
 
         self.train_func = theano.function(inputs=self.inputs, outputs=self.train_outputs, updates=self.updates)
         self.valid_func = theano.function(inputs=self.inputs, outputs=self.valid_outputs)
