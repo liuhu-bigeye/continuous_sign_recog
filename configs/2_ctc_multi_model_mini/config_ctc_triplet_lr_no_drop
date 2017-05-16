@@ -1,0 +1,22 @@
+# configs startswith '='
+# no '' for string
+# readme begin after ----
+# log will be saved if only with more than 5 Iterations
+
+phase=ctc
+model_feat=/home/liuhu/workspace/journal/models/triplet_feat_right_132.model
+
+gpu=4
+lr=5e-4
+batch_size=2
+disp_iter=200
+patience=10
+max_epoch=100
+
+snap_path=DIR/snapshot
+prefix=ctc_multi_lr_from_triplet
+
+----
+This is a lr ctc multi-model model
+Finetuned from triplet pretrained model
+No dropout

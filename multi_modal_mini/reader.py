@@ -8,7 +8,8 @@ import random
 import pickle
 import numpy as np
 
-data_dir = '/home/trunk/disk1/database-rwth-2014/phoenix2014-release'
+# data_dir = '/home/trunk/disk1/database-rwth-2014/phoenix2014-release'
+data_dir = '/mnt/disk1/RWTH2014' # on impala only
 database_file = os.path.join(data_dir, 'database_2014_combine.pkl')
 data_file = os.path.join(data_dir, 'feat_multimodal.h5')
 sys.path.insert(0, '/home/liuhu/workspace/journal/all_vgg_s_multi_modal')
@@ -321,7 +322,7 @@ if __name__ == '__main__':
 
                 of = flow2image_normal(ofl[i, j] / 128. * 20.)
                 out[(j+2)*101: (j+3) * 101, i * 101: (i + 1) * 101, :] = of
-        
+
         sio.imsave('reader.jpg', out)
         break
 
@@ -330,4 +331,4 @@ if __name__ == '__main__':
     # for _ in range(10):
     #     image, oflow, coord, mask, token, ID, upsamp_indices = train_set.check_inputs(check_indices, offset=0)
 
-    #     print 
+    #     print
