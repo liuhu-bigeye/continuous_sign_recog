@@ -62,11 +62,13 @@ class Model(object):
         net['pre_conv1d'] = DimshuffleLayer(ReshapeLayer(incoming=NonlinearityLayer(net['fc6'], nonlinearity=rectify), shape=(self.nb, -1, 1024)), (0, 2, 1))
         net['conv1d_1'] = Conv1DLayer(net['pre_conv1d'], num_filters=1024, filter_size=3, pad='same')
         net['pool1d_1'] = MaxPool1DLayer(net['conv1d_1'], pool_size=2)	#(nb, 1024, max_hlen)
-        net['drop1d_1'] = DropoutLayer(net['pool1d_1'], p=0.1, shared_axes=(2,))
+        net['drop1d_1_before'] = DropoutLayer(net['pool1d_1'], p=0.1, shared_axes=(2,))
+        net['drop1d_1'] = ReshapeLayer(net['drop1d_1_before'], shape=(-1, [1], [2]))
 
         net['conv1d_2'] = Conv1DLayer(net['drop1d_1'], num_filters=1024, filter_size=3, pad='same')
         net['pool1d_2'] = MaxPool1DLayer(net['conv1d_2'], pool_size=2)	#(nb, 1024, max_hlen)
-        net['drop1d_2'] = DropoutLayer(net['pool1d_2'], p=0.1, shared_axes=(2,))
+        net['drop1d_2_before'] = DropoutLayer(net['pool1d_2'], p=0.1, shared_axes=(2,))
+        net['drop1d_2'] = ReshapeLayer(net['drop1d_2_before'], shape=(-1, [1], [2]))
 
         # LSTM
         net['lstm_input'] = InputLayer(shape=(None, None, 1024), name='lstm_input')
@@ -169,6 +171,10 @@ class Model(object):
 
 
     def make_functions(self):
+        for param, update in self.updates.items():
+            if param.broadcastable != update.broadcastable:
+                self.updates[param] = T.patternbroadcast(update, param.broadcastable)
+
         self.train_func = theano.function(inputs=self.inputs, outputs=self.train_outputs, updates=self.updates)
         self.valid_func = theano.function(inputs=self.inputs, outputs=self.valid_outputs)
 
