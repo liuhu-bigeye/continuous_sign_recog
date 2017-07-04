@@ -1,22 +1,22 @@
 '''
-                          _ooOoo_                                 
-                         o8888888o                                    
-                         88" . "88                                    
-                         (| ^_^ |)                                    
-                         O\  =  /O                                
-                      ____/`---'\____                                                     
-                    .'  \\|     |  `.                           
-                   /  \\|||  :  |||  \                              
-                  /  _||||| -:- |||||-  \                         
-                  |   | \\\  -  / |   |                         
-                  | \_|  ''\---/''  |   |                                 
-                  \  .-\__  `-`  ___/-. /                                 
-                ___`. .'  /--.--\  `. . ___                           
-              ."" '<  `.___\_<|>_/___.'  >'"".                    
-            | | :  `- \`.;`\ _ /`;.`/ - ` : | |                       
-            \  \ `-.   \_ __\ /__ _/   .-` /  /                   
-      ========`-.____`-.___\_____/___.-`____.-'========               
-                           `=---='                                
+                          _ooOoo_
+                         o8888888o
+                         88" . "88
+                         (| ^_^ |)
+                         O\  =  /O
+                      ____/`---'\____
+                    .'  \\|     |  `.
+                   /  \\|||  :  |||  \
+                  /  _||||| -:- |||||-  \
+                  |   | \\\  -  / |   |
+                  | \_|  ''\---/''  |   |
+                  \  .-\__  `-`  ___/-. /
+                ___`. .'  /--.--\  `. . ___
+              ."" '<  `.___\_<|>_/___.'  >'"".
+            | | :  `- \`.;`\ _ /`;.`/ - ` : | |
+            \  \ `-.   \_ __\ /__ _/   .-` /  /
+      ========`-.____`-.___\_____/___.-`____.-'========
+                           `=---='
 
 no change, no bug
 
@@ -113,7 +113,7 @@ class Model(object):
         net['lstm_shp_right'] = ReshapeLayer(ConcatLayer((net['lstm_frw_right'], net['lstm_bck_right']), axis=2), shape=(-1, 2*hidden_ndim))        # (nb*max_hlen, 2*hidden_ndim)
 
         # fusion lstm
-        net['lstm_input_fusion'] = ExpressionLayer(net['lstm_input'], function=lambda x: T.concatenate([x[:x.shape[0]/2], x[x.shape[0]/2:]], axis=2), output_shape='auto')
+        net['lstm_input_fusion'] = ExpressionLayer(net['lstm_input'], function=lambda x: T.concatenate([x[:x.shape[0]/2], x[x.shape[0]/2:]], axis=2)/2.0, output_shape='auto')
         net['lstm_frw_fusion'] = LSTMLayer(incoming=net['lstm_input_fusion'], mask_input=net['mask'], forgetgate=Gate(b=lasagne.init.Constant(1.0)), num_units=hidden_ndim)  # (nb, max_hlen, hidden_ndim)
         net['lstm_bck_fusion'] = LSTMLayer(incoming=net['lstm_input_fusion'], mask_input=net['mask'], forgetgate=Gate(b=lasagne.init.Constant(1.0)), num_units=hidden_ndim, backwards=True)
         net['lstm_shp_fusion'] = ReshapeLayer(ConcatLayer((net['lstm_frw_fusion'], net['lstm_bck_fusion']), axis=2), shape=(-1, 2 * hidden_ndim))   # (nb*max_hlen, 2*hidden_ndim)
@@ -138,15 +138,15 @@ class Model(object):
             # for triplet pretrain use
             self.params_feat = get_all_params(net['fc7'])
             regular_feat = lasagne.regularization.apply_penalty(self.params_feat, lasagne.regularization.l2) * np.array(5e-4 / 2, dtype=np.float32)
-            
+
             ## triplet train loss
             triplet_loss_train = self.get_triplet_loss(image, opflow, deterministic=False)
             loss_train_feat = triplet_loss_train + regular_feat
-            
+
             ## triplet valid loss
             triplet_loss_valid = self.get_triplet_loss(image, opflow, deterministic=True)
             loss_valid_feat = triplet_loss_valid + regular_feat
-            
+
             self.updates = lasagne.updates.momentum(loss_train_feat, self.params_feat, learning_rate=learning_rate, momentum=0.9)
             self.inputs = [image, opflow]
             self.train_outputs = [loss_train_feat, triplet_loss_train]
@@ -178,8 +178,8 @@ class Model(object):
             # self.feature_func = theano.function(inputs=[data], outputs=fc6)
 
         elif phase == 'get_prediction':
-            embeding = get_output(self.net['fusion_2'], {self.net['image']: image, 
-                                                         self.net['opflow']: opflow, 
+            embeding = get_output(self.net['fusion_2'], {self.net['image']: image,
+                                                         self.net['opflow']: opflow,
                                                          self.net['coord']: coord}, deterministic=True)  # (nb, 1280, len_m)
             output_lin = get_output(self.net['out_lin'], {self.net['lstm_input']: T.transpose(embeding, (0, 2, 1)), self.net['mask']: mask}, deterministic=True)
 
@@ -193,8 +193,8 @@ class Model(object):
             self.predict_func = theano.function(inputs=[data, mask, token], outputs=[best_path_loss, best_path, ctc_loss])
 
         elif phase == 'top_k_prediction':
-            embeding = get_output(self.net['fusion_2'], {self.net['image']: image, 
-                                                         self.net['opflow']: opflow, 
+            embeding = get_output(self.net['fusion_2'], {self.net['image']: image,
+                                                         self.net['opflow']: opflow,
                                                          self.net['coord']: coord}, deterministic=True)  # (nb, 1280, len_m)
             output_lin = get_output(self.net['out_lin'], {self.net['lstm_input']: T.transpose(embeding, (0, 2, 1)), self.net['mask']: mask}, deterministic=True)
 
