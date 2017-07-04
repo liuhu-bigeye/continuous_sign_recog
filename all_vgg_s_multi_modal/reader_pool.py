@@ -1,10 +1,13 @@
 import os
 import cv2
 import sys
+import pdb
+import time
 import glog
 import h5py
 import random
 import pickle
+import multiprocessing
 import numpy as np
 
 data_dir = '/var/disk1/RWTH2014'
@@ -65,11 +68,48 @@ class Reader(object):
 
     def iterate(self, return_folder=False, return_upsamp_indices=False):
         index = range(self.n_samples)
-        if self.do_shuffle:
-            random.shuffle(index)
+        # if self.do_shuffle:
+            # random.shuffle(index)
 
-        for k in range(0, self.n_samples, self.batch_size):
-            indices = index[k: k+self.batch_size]
+        with multiprocessing.Manager() as manager:
+            queue_in = multiprocessing.Queue(self.n_samples)
+            for k in range(0, self.n_samples, self.batch_size):
+                indices = index[k: k+self.batch_size]
+                queue_in.put(indices)
+
+            record = []
+            queue_out = manager.Queue(60)
+            lock  = multiprocessing.Lock()    # To prevent messy print
+
+            # input processes
+            for i in range(8):
+                process = multiprocessing.Process(target=self.get_one_batch, args=(queue_in, queue_out, lock))
+                process.start()
+                record.append(process)
+
+            for k in range(0, self.n_samples, self.batch_size):
+                time_orig = time.time()
+                image, oflow, coord, mask, token, ID, upsamp_indices = queue_out.get()
+                mem_size = np.sum([d.nbytes/1e6 for d in [image, oflow, coord, mask, token]])
+                glog.info('\nTime: %f, Mem: %.3fMB'%(time.time()-time_orig, mem_size))
+                yields = [image, oflow, coord, mask, token]
+
+                if return_folder:
+                    yields += [ID]
+                if return_upsamp_indices:
+                    yields += [upsamp_indices]
+                yield yields
+
+            for p in record:
+                p.join()
+            queue_in.close()
+            queue_out.close()
+
+    def get_one_batch(self, queue_in, queue_out, lock):
+        while not queue_in.empty():
+            time_start = time.time()
+
+            indices = queue_in.get()
             batch_size = len(indices)
 
             y_len = np.array([len(self.db['token'][i]) for i in indices], dtype=np.int32)
@@ -102,10 +142,12 @@ class Reader(object):
             coord = np.zeros((batch_size, 20, max_X_Len), dtype=np.float32)
             mask = [np.concatenate((np.ones(l), np.zeros(max_h_len - l))) for l in h_len]
 
+            time_init = time.time()
+
             # gathering features
             for i, ind in enumerate(indices):
                 image_raw, warp_mat = self.get_imgs(b_idx[ind], e_idx[ind]) # (x_len, 2, 3, 101, 101)
-                image_aug = interp_images(image_raw, upsamp_indices[i])  # (X_Len, 2, 3, 101, 101)	# interp_images means interp without float
+                image_aug = interp_images(image_raw, upsamp_indices[i])  # (X_Len, 2, 3, 101, 101)  # interp_images means interp without float
                 assert X_Len[i] == image_aug.shape[0]
                 image[i, :X_Len[i]] = image_aug
 
@@ -118,6 +160,7 @@ class Reader(object):
                 coord_aug = interp_images(coord_raw, upsamp_indices[i])  # (X_Len, 20)
                 coord[i, :, :X_Len[i]] = coord_aug.transpose([1, 0])
 
+            time_get = time.time()
 
             image = np.transpose(image, (2, 0, 1, 3, 4, 5))  # (2, batch_size, max_X_Len, 3, 101, 101)
             oflow = np.transpose(oflow, (2, 0, 1, 3, 4, 5))  # (2, batch_size, max_X_Len, 2, 101, 101)
@@ -126,14 +169,22 @@ class Reader(object):
             oflow = np.reshape(np.float32(oflow), (-1, 2, 101, 101)) / 20. * 128.  # (2 * batch_size * X_len, 2, 101, 101)
             coord = np.float32(coord)
             mask = np.array(mask, dtype=np.float32)  # (batch_size, max_h_len)
+            
 
-            yields = [image, oflow, coord, mask, token]
-            if return_folder:
-                yields += [ID]
-            if return_upsamp_indices:
-                yields += [upsamp_indices]
+            time_before_queue = time.time()
+            qsize = queue_out.qsize()            
+            queue_out.put([p for p in [image, oflow, coord, mask, token, ID, upsamp_indices]])
 
-            yield [y[0] for y in yields]
+            time_out = time.time()
+
+            lock.acquire()
+            sys.stdout.write('init: %f, get: %f, before queue: %f, qsize: %f, out: %f\r'%(time_init-time_start, time_get-time_init, time_before_queue-time_get, qsize, time_out-time_before_queue))
+            sys.stdout.flush()
+            lock.release()
+
+        lock.acquire()
+        glog.info(str(os.getpid()) + 'logout')
+        lock.release()
 
     def get_coord(self, indexs):
         # return features of trajectory
@@ -195,115 +246,8 @@ class Reader(object):
         imgs = np.transpose(np.reshape(imgs, (-1, 2, 101, 101, 3)), (0, 1, 4, 2, 3))
         return imgs, mat
 
-
-    def check_inputs(self, indices):
-        batch_size = len(indices)
-
-        y_len = np.array([len(self.db['token'][i]) for i in indices], dtype=np.int32)
-        max_y_len = max(y_len)
-        token = np.array([np.concatenate([self.tokens[idx], (max_y_len-y_len[i])*[-2]])+1 for i,idx in enumerate(indices)], dtype=np.int32)
-
-        ID = [self.db['folder'][i] for i in indices]
-        b_idx = [b for b in self.db['begin_index']]
-        e_idx = self.db['end_index']
-
-        x_len = [e_idx[i] - b_idx[i] for i in indices]
-
-        if self.resample_at_end:
-            h_len = [int(np.ceil(float(l - self.c3d_depth) / float(self.depth_stride))) + 1 for l in x_len]
-            X_Len = [(l - 1) * self.depth_stride + self.c3d_depth for l in h_len]
-            upsamp_indices = upsampling_at_end(x_len, self.c3d_depth, self.depth_stride)
-        elif self.resample == True:
-            X_Len, upsamp_indices = resampling(x_len, self.c3d_depth, self.depth_stride)
-            h_len = [int(np.ceil(float(l - self.c3d_depth) / float(self.depth_stride)))+1 for l in X_Len]
-        else:
-            h_len = [int(np.ceil(float(l - self.c3d_depth) / float(self.depth_stride)))+1 for l in x_len]
-            X_Len = [(l-1)*self.depth_stride + self.c3d_depth for l in h_len]
-            upsamp_indices = upsampling(x_len, self.c3d_depth, self.depth_stride)
-
-        max_h_len = np.max(h_len)
-        max_X_Len = np.max(X_Len)
-
-        image = np.zeros((batch_size, max_X_Len, 2, 3, 101, 101), dtype=np.float32)
-        oflow = np.zeros((batch_size, max_X_Len, 2, 2, 101, 101), dtype=np.float32)
-        coord = np.zeros((batch_size, max_X_Len, 20), dtype=np.float32)
-        mask = [np.concatenate((np.ones(l), np.zeros(max_h_len - l))) for l in h_len]
-
-        # gathering features
-        for i, ind in enumerate(indices):
-            image_raw, warp_mat = self.get_imgs(range(b_idx[ind], e_idx[ind])) # (x_len, 2, 3, 101, 101)
-            image_aug = interp_images(image_raw, upsamp_indices[i])  # (X_Len, 2, 3, 101, 101)  # interp_images means interp without float
-            assert X_Len[i] == image_aug.shape[0]
-            image[i, :X_Len[i]] = image_aug
-
-            oflow_raw = self.get_oflow(range(b_idx[ind], e_idx[ind]), warp_mat)
-            oflow_aug = interp_images(oflow_raw, upsamp_indices[i])  # (X_Len, 2, 2, 101, 101)
-            assert X_Len[i] == oflow_aug.shape[0]
-            oflow[i, :X_Len[i]] = oflow_aug
-
-            coord_raw = self.get_coord(range(b_idx[ind], e_idx[ind]))
-            coord_aug = interp_images(coord_raw, upsamp_indices[i])  # (X_Len, 20)
-            coord[i, :X_Len[i]] = coord_aug
-
-        image = np.transpose(image, (2, 0, 1, 3, 4, 5))  # (2, batch_size, max_X_Len, 3, 101, 101)
-        oflow = np.transpose(oflow, (2, 0, 1, 3, 4, 5))  # (2, batch_size, max_X_Len, 2, 101, 101)
-
-        image = np.reshape(np.float32(image), (-1, 3, 101, 101))  # (2 * batch_size * X_len, 3, 101, 101)
-        oflow = np.reshape(np.float32(oflow), (-1, 2, 101, 101)) / 20. * 128.  # (2 * batch_size * X_len, 2, 101, 101)
-        coord = np.float32(coord)
-        mask = np.array(mask, dtype=np.float32)  # (batch_size, max_h_len)
-
-        return image, oflow, coord, mask, token, ID, upsamp_indices
-
-
 if __name__ == '__main__':
     train_set = Reader(phase='train', batch_size=1, do_shuffle=True, resample=True, distortion=True)
     for inputs in train_set.iterate(return_folder=False):
         glog.info([s.shape for s in inputs])
     exit(0)
-
-    # check_indices = np.array([  30,   32,   55])
-
-    # # image, oflow, coord, mask, token, ID, upsamp_indices = train_set.check_inputs(check_indices, offset=0)
-    # for image, oflow, coord, mask, token in train_set.iterate():
-    #     break
-    # batch_size = mask.shape[0]
-    # image = np.transpose(np.reshape(image, (2, batch_size, -1, 3, 101, 101)), (1, 2, 0, 4, 5, 3))
-    # oflow = np.transpose(np.reshape(oflow, (2, batch_size, -1, 2, 101, 101)), (1, 2, 0, 4, 5, 3))
-
-    # import skimage.io as sio
-    # from skimage.transform import resize
-
-    # # os.system('mkdir check_imgs')
-
-    # for idx in xrange(train_set.batch_size):
-    #     print idx, token[idx]
-    #     print image.shape, oflow.shape
-    #     print coord[idx][:, 0]
-    #     print coord[idx][:, 4]
-    #     print coord[idx][:, 10]
-
-    #     img = image[idx] + np.array([123, 117, 102], dtype=np.float32)[None, None, None, None, :]
-    #     ofl = oflow[idx]
-
-    #     out = np.zeros((101 * 4, 101 * img.shape[0], 3), dtype=np.float32)
-    #     img[img > 255.] = 255.
-    #     img[img < 0.] = 0.
-
-    #     for i in range(img.shape[0]):
-    #         for j in range(2):
-    #             im = img[i, j] / 255.
-    #             out[j * 101: (j + 1) * 101, i * 101: (i + 1) * 101, :] = im
-
-    #             of = flow2image_normal(ofl[i, j] / 128. * 20.)
-    #             out[(j+2)*101: (j+3) * 101, i * 101: (i + 1) * 101, :] = of
-        
-    #     sio.imsave('reader.jpg', out)
-    #     break
-
-
-    # train_set = Reader(phase='train', batch_size=2, do_shuffle=True, resample=True, distortion=True)
-    # for _ in range(10):
-    #     image, oflow, coord, mask, token, ID, upsamp_indices = train_set.check_inputs(check_indices, offset=0)
-
-    #     print 

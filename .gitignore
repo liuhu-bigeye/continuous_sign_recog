@@ -3,6 +3,8 @@ models/*
 *.pyc
 *.png
 *.jpg
+*iter*
+*epoch*
 
 *result*
 *.tar

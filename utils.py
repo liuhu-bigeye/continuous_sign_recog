@@ -81,7 +81,7 @@ def upsampling_at_end(lengths, depth, stride):
 		else:
 			add_ind = []
 
-		index = sorted(range(length) + add_ind)			
+		index = sorted(range(length) + add_ind)
 		indices.append(index)
 
 	return indices

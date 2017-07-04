@@ -1,0 +1,20 @@
+# configs startswith '='
+# no '' for string
+# readme begin after ----
+# log will be saved if only with more than 5 Iterations
+
+phase=ctc
+model=/home/liuhu/workspace/journal/model_tf/cnn_all_vgg_s_epoch_0004_iter_010000
+
+gpu=1
+lr=5e-5
+batch_size=2
+disp_iter=1
+patience=10
+max_epoch=100
+
+snap_path=DIR/snapshot
+prefix=ctc_tf
+
+----
+ctc tf

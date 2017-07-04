@@ -16,7 +16,8 @@ cp $SCRIPTS_DIR/*.py $OUTPUT_DIR
 cp $CONFIG_FILE $OUTPUT_DIR
 
 CONFIG_PATH=$OUTPUT_DIR/$(basename $CONFIG_FILE)
-python $MAIN_SCRIPTS $OUTPUT_DIR $CONFIG_PATH 2>&1 | tee $OUTPUT_DIR/log.txt
+python $MAIN_SCRIPTS $OUTPUT_DIR $CONFIG_PATH
+# 2>&1 | tee $OUTPUT_DIR/log.txt
 
 if [ $(cat $OUTPUT_DIR/log.txt | grep 'Iteration' | wc -l) -le 40 ]; then
     rm -rf $OUTPUT_DIR
